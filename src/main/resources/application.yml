@@ -14,6 +14,10 @@ spring:
       host: localhost
       port: 6379
       database: 0
+  servlet:
+    multipart:
+      max-file-size: 2MB
+      max-request-size: 10MB
 
 mybatis-plus:
   mapper-locations: classpath*:mapper/**/*.xml
@@ -32,3 +36,7 @@ jwt:
 wx:
   appid: placeholder-appid
   secret: placeholder-secret
+
+upload:
+  path: uploads/
+  max-size: 2097152
