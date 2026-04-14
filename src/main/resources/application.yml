@@ -40,3 +40,7 @@ wx:
 upload:
   path: uploads/
   max-size: 2097152
+
+match:
+  min-score: 0.30
+  notify-top-n: 3

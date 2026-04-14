@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper
+        PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.lostfound.mapper.MatchResultMapper">
+
+    <insert id="insertOrUpdate">
+        INSERT INTO match_result (src_post_id, dst_post_id, score, reason_json, is_notified)
+        VALUES (#{matchResult.srcPostId}, #{matchResult.dstPostId}, #{matchResult.score}, #{matchResult.reasonJson},
+                #{matchResult.isNotified})
+        ON DUPLICATE KEY UPDATE
+        score = VALUES(score),
+        reason_json = VALUES(reason_json)
+    </insert>
+
+</mapper>

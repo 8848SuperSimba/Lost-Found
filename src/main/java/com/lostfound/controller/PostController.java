@@ -10,10 +10,12 @@ import com.lostfound.enums.PostStatus;
 import com.lostfound.enums.PostType;
 import com.lostfound.exception.BusinessException;
 import com.lostfound.service.ItemPostService;
+import com.lostfound.service.MatchService;
 import com.lostfound.vo.PostVO;
 import jakarta.validation.Valid;
 import java.time.LocalDateTime;
 import java.util.Map;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.scheduling.annotation.Async;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
@@ -34,6 +36,9 @@ public class PostController {
 
     private final ItemPostService itemPostService;
 
+    @Autowired
+    private MatchService matchService;
+
     public PostController(ItemPostService itemPostService) {
         this.itemPostService = itemPostService;
     }
@@ -41,9 +46,9 @@ public class PostController {
     @PostMapping("/api/posts")
     public Result<Long> createPost(@Valid @RequestBody CreatePostRequest request) {
         Long currentUserId = getRequiredCurrentUserId();
-        Long postId = itemPostService.createPost(request, currentUserId);
-        triggerMatchAsync(postId);
-        return Result.success(postId);
+        Long newPostId = itemPostService.createPost(request, currentUserId);
+        triggerMatchAsync(newPostId);
+        return Result.success(newPostId);
     }
 
     @GetMapping("/api/posts")
@@ -114,8 +119,7 @@ public class PostController {
 
     @Async
     public void triggerMatchAsync(Long postId) {
-        // matchService.triggerMatch(postId);
-        // 匹配模块暂未接入，此处保留异步触发占位。
+        matchService.triggerMatchAsync(postId);
     }
 
     private Long getRequiredCurrentUserId() {
