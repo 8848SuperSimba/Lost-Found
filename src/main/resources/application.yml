@@ -34,8 +34,9 @@ jwt:
   expiration: 604800000
 
 wx:
-  appid: placeholder-appid
-  secret: placeholder-secret
+  appid: wx9377b4e12bb70f1f
+  secret: 53ef89a96b5d0cc75270b6baa7f6fe66
+  token: lostfound2026
 
 upload:
   path: uploads/
