@@ -18,11 +18,13 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.concurrent.TimeUnit;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
 
+@Slf4j
 @Service
 public class StatsServiceImpl implements StatsService {
 
@@ -40,7 +42,7 @@ public class StatsServiceImpl implements StatsService {
 
     @Override
     public OverviewVO getOverview() {
-        Object cached = redisTemplate.opsForValue().get(OVERVIEW_KEY);
+        Object cached = safeRedisGet(OVERVIEW_KEY);
         if (cached instanceof OverviewVO overviewVO) {
             return overviewVO;
         }
@@ -67,14 +69,14 @@ public class StatsServiceImpl implements StatsService {
                 .todayCount(defaultCount(todayCount))
                 .openCount(defaultCount(openCount))
                 .build();
-        redisTemplate.opsForValue().set(OVERVIEW_KEY, result, 5, TimeUnit.MINUTES);
+        safeRedisSet(OVERVIEW_KEY, result, 5, TimeUnit.MINUTES);
         return result;
     }
 
     @Override
     public List<CategoryStatVO> getCategoryStats(String postType, Integer days) {
         String key = "stats:category:" + normalizeKeyPart(postType) + ":" + normalizeKeyPart(days);
-        Object cached = redisTemplate.opsForValue().get(key);
+        Object cached = safeRedisGet(key);
         if (cached instanceof List<?> list) {
             @SuppressWarnings("unchecked")
             List<CategoryStatVO> categoryStats = (List<CategoryStatVO>) list;
@@ -115,14 +117,14 @@ public class StatsServiceImpl implements StatsService {
                     .build();
         }).toList();
 
-        redisTemplate.opsForValue().set(key, result, 5, TimeUnit.MINUTES);
+        safeRedisSet(key, result, 5, TimeUnit.MINUTES);
         return result;
     }
 
     @Override
     public List<AreaStatVO> getAreaStats(String postType, Integer days) {
         String key = "stats:area:" + normalizeKeyPart(postType) + ":" + normalizeKeyPart(days);
-        Object cached = redisTemplate.opsForValue().get(key);
+        Object cached = safeRedisGet(key);
         if (cached instanceof List<?> list) {
             @SuppressWarnings("unchecked")
             List<AreaStatVO> areaStats = (List<AreaStatVO>) list;
@@ -153,7 +155,7 @@ public class StatsServiceImpl implements StatsService {
                         .build(),
                 params.toArray());
 
-        redisTemplate.opsForValue().set(key, result, 5, TimeUnit.MINUTES);
+        safeRedisSet(key, result, 5, TimeUnit.MINUTES);
         return result;
     }
 
@@ -161,7 +163,7 @@ public class StatsServiceImpl implements StatsService {
     public List<TrendStatVO> getTrend(String postType, Integer days) {
         int queryDays = days == null ? 30 : days;
         String key = "stats:trend:" + normalizeKeyPart(postType) + ":" + queryDays;
-        Object cached = redisTemplate.opsForValue().get(key);
+        Object cached = safeRedisGet(key);
         if (cached instanceof List<?> list) {
             @SuppressWarnings("unchecked")
             List<TrendStatVO> trendStats = (List<TrendStatVO>) list;
@@ -204,21 +206,21 @@ public class StatsServiceImpl implements StatsService {
                     .build());
         }
 
-        redisTemplate.opsForValue().set(key, result, 5, TimeUnit.MINUTES);
+        safeRedisSet(key, result, 5, TimeUnit.MINUTES);
         return result;
     }
 
     @Override
     public UserStatVO getUserStats() {
-        Object cached = redisTemplate.opsForValue().get(USER_STATS_KEY);
+        Object cached = safeRedisGet(USER_STATS_KEY);
         if (cached instanceof UserStatVO userStatVO) {
             return userStatVO;
         }
 
-        Long totalCount = queryCount("SELECT COUNT(*) FROM user");
-        Long todayCount = queryCount("SELECT COUNT(*) FROM user WHERE DATE(created_at) = CURDATE()");
-        Long bannedCount = queryCount("SELECT COUNT(*) FROM user WHERE status = 'BANNED'");
-        Long activeCount = queryCount("SELECT COUNT(*) FROM user WHERE last_login_at >= DATE_SUB(NOW(), INTERVAL 7 DAY)");
+        Long totalCount = queryCount("SELECT COUNT(*) FROM `user`");
+        Long todayCount = queryCount("SELECT COUNT(*) FROM `user` WHERE DATE(created_at) = CURDATE()");
+        Long bannedCount = queryCount("SELECT COUNT(*) FROM `user` WHERE status = 'BANNED'");
+        Long activeCount = queryCount("SELECT COUNT(*) FROM `user` WHERE last_login_at >= DATE_SUB(NOW(), INTERVAL 7 DAY)");
 
         UserStatVO result = UserStatVO.builder()
                 .totalCount(defaultCount(totalCount))
@@ -226,8 +228,25 @@ public class StatsServiceImpl implements StatsService {
                 .bannedCount(defaultCount(bannedCount))
                 .activeCount(defaultCount(activeCount))
                 .build();
-        redisTemplate.opsForValue().set(USER_STATS_KEY, result, 5, TimeUnit.MINUTES);
+        safeRedisSet(USER_STATS_KEY, result, 5, TimeUnit.MINUTES);
         return result;
+    }
+
+    private Object safeRedisGet(String key) {
+        try {
+            return redisTemplate.opsForValue().get(key);
+        } catch (Exception ex) {
+            log.warn("读取 Redis 缓存失败，将直接查库: key={}, message={}", key, ex.getMessage());
+            return null;
+        }
+    }
+
+    private void safeRedisSet(String key, Object value, long timeout, TimeUnit unit) {
+        try {
+            redisTemplate.opsForValue().set(key, value, timeout, unit);
+        } catch (Exception ex) {
+            log.warn("写入 Redis 缓存失败: key={}, message={}", key, ex.getMessage());
+        }
     }
 
     private Long queryCount(String sql) {
