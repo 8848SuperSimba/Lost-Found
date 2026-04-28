@@ -1,9 +1,9 @@
 package com.lostfound.controller;
 
 import com.lostfound.common.Result;
-import com.lostfound.common.ResultCode;
 import com.lostfound.dto.LoginRequest;
 import com.lostfound.dto.RegisterRequest;
+import com.lostfound.dto.WxLoginRequest;
 import com.lostfound.service.UserService;
 import jakarta.validation.Valid;
 import java.util.Map;
@@ -34,7 +34,7 @@ public class AuthController {
     }
 
     @PostMapping("/wx-login")
-    public Result<Void> wxLogin() {
-        return Result.fail(ResultCode.ERROR, "微信登录暂未开放");
+    public Result<Map<String, Object>> wxLogin(@Valid @RequestBody WxLoginRequest request) {
+        return Result.success(userService.wxLogin(request));
     }
 }

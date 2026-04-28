@@ -8,6 +8,7 @@ import com.lostfound.dto.ChangePasswordRequest;
 import com.lostfound.dto.LoginRequest;
 import com.lostfound.dto.RegisterRequest;
 import com.lostfound.dto.UpdateUserRequest;
+import com.lostfound.dto.WxLoginRequest;
 import com.lostfound.entity.User;
 import com.lostfound.enums.UserRole;
 import com.lostfound.enums.UserStatus;
@@ -16,11 +17,20 @@ import com.lostfound.mapper.UserMapper;
 import com.lostfound.service.UserService;
 import com.lostfound.util.JwtUtil;
 import com.lostfound.vo.UserVO;
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import java.net.URI;
+import java.net.URLEncoder;
+import java.net.http.HttpClient;
+import java.net.http.HttpRequest;
+import java.net.http.HttpResponse;
+import java.nio.charset.StandardCharsets;
 import java.time.LocalDateTime;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
@@ -32,13 +42,25 @@ public class UserServiceImpl implements UserService {
     private final PasswordEncoder passwordEncoder;
     private final JwtUtil jwtUtil;
     private final JdbcTemplate jdbcTemplate;
+    private final ObjectMapper objectMapper;
+
+    @Value("${wx.appid}")
+    private String wxAppid;
+
+    @Value("${wx.secret}")
+    private String wxSecret;
 
     public UserServiceImpl(
-            UserMapper userMapper, PasswordEncoder passwordEncoder, JwtUtil jwtUtil, JdbcTemplate jdbcTemplate) {
+            UserMapper userMapper,
+            PasswordEncoder passwordEncoder,
+            JwtUtil jwtUtil,
+            JdbcTemplate jdbcTemplate,
+            ObjectMapper objectMapper) {
         this.userMapper = userMapper;
         this.passwordEncoder = passwordEncoder;
         this.jwtUtil = jwtUtil;
         this.jdbcTemplate = jdbcTemplate;
+        this.objectMapper = objectMapper;
     }
 
     @Override
@@ -99,6 +121,38 @@ public class UserServiceImpl implements UserService {
 
         User updateLogin = User.builder().id(user.getId()).lastLoginAt(LocalDateTime.now()).build();
         userMapper.updateById(updateLogin);
+
+        String token = jwtUtil.generateToken(user.getId(), user.getRole().name());
+        Map<String, Object> result = new HashMap<>();
+        result.put("token", token);
+        result.put("user", toUserVO(user));
+        return result;
+    }
+
+    @Override
+    public Map<String, Object> wxLogin(WxLoginRequest request) {
+        String openid = exchangeCodeForOpenid(request.getCode());
+        if (!StringUtils.hasText(openid)) {
+            throw new BusinessException(ResultCode.BAD_REQUEST, "微信授权失败，请重试");
+        }
+
+        User user = userMapper.selectOne(new LambdaQueryWrapper<User>().eq(User::getWxOpenid, openid).last("LIMIT 1"));
+        if (user == null) {
+            user = User.builder()
+                    .wxOpenid(openid)
+                    .nickname("微信用户")
+                    .role(UserRole.USER)
+                    .status(UserStatus.ACTIVE)
+                    .build();
+            userMapper.insert(user);
+            user = userMapper.selectById(user.getId());
+        }
+
+        if (user.getStatus() == UserStatus.BANNED) {
+            throw new BusinessException(ResultCode.USER_BANNED);
+        }
+
+        userMapper.updateById(User.builder().id(user.getId()).lastLoginAt(LocalDateTime.now()).build());
 
         String token = jwtUtil.generateToken(user.getId(), user.getRole().name());
         Map<String, Object> result = new HashMap<>();
@@ -202,5 +256,38 @@ public class UserServiceImpl implements UserService {
                 .lastLoginAt(user.getLastLoginAt())
                 .createdAt(user.getCreatedAt())
                 .build();
+    }
+
+    private String exchangeCodeForOpenid(String code) {
+        try {
+            String encodedCode = URLEncoder.encode(code, StandardCharsets.UTF_8);
+            String url = "https://api.weixin.qq.com/sns/oauth2/access_token?appid="
+                    + wxAppid
+                    + "&secret="
+                    + wxSecret
+                    + "&code="
+                    + encodedCode
+                    + "&grant_type=authorization_code";
+
+            HttpClient client = HttpClient.newHttpClient();
+            HttpRequest request =
+                    HttpRequest.newBuilder().uri(URI.create(url)).GET().build();
+            HttpResponse<String> response = client.send(request, HttpResponse.BodyHandlers.ofString());
+
+            JsonNode root = objectMapper.readTree(response.body());
+            if (root.hasNonNull("errcode")) {
+                String errMsg = root.hasNonNull("errmsg") ? root.get("errmsg").asText() : "unknown";
+                throw new BusinessException(ResultCode.BAD_REQUEST, "微信授权失败: " + errMsg);
+            }
+            JsonNode openidNode = root.get("openid");
+            if (openidNode == null || openidNode.isNull()) {
+                return null;
+            }
+            return openidNode.asText();
+        } catch (BusinessException ex) {
+            throw ex;
+        } catch (Exception ex) {
+            throw new BusinessException(ResultCode.ERROR, "微信登录服务异常");
+        }
     }
 }

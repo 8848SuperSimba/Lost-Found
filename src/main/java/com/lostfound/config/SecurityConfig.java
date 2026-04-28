@@ -28,6 +28,8 @@ public class SecurityConfig {
                 .authorizeHttpRequests(auth -> auth
                         .requestMatchers(HttpMethod.POST, "/api/auth/register", "/api/auth/login", "/api/auth/wx-login")
                         .permitAll()
+                        .requestMatchers(HttpMethod.GET, "/", "/error")
+                        .permitAll()
                         .requestMatchers(
                                 HttpMethod.GET,
                                 "/api/posts",
