@@ -27,7 +27,7 @@ const form = reactive({
 
 const submit = async () => {
   if (!form.title || !form.category || !form.lostFoundTime || !form.areaCode) {
-    ElMessage.warning('请先补全必填信息')
+    ElMessage.warning('标题、分类、遗失/拾获时间、区域编码为必填项')
     return
   }
   if (dayjs(form.lostFoundTime).isAfter(dayjs())) {

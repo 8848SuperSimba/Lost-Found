@@ -60,10 +60,11 @@ public class PostController {
             @RequestParam(required = false) LocalDateTime startTime,
             @RequestParam(required = false) LocalDateTime endTime,
             @RequestParam(required = false) String keyword,
+            @RequestParam(required = false) Long publisherUserId,
             @RequestParam(defaultValue = "1") long page,
             @RequestParam(defaultValue = "10") long size) {
         return Result.success(itemPostService.listPosts(
-                postType, category, areaCode, status, startTime, endTime, keyword, null, page, size));
+                postType, category, areaCode, status, startTime, endTime, keyword, publisherUserId, page, size));
     }
 
     @GetMapping("/api/posts/{id}")

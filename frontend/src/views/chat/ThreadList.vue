@@ -9,18 +9,18 @@ const threads = ref([])
 const loading = ref(false)
 let timer = null
 
-const fetchThreads = async () => {
-  loading.value = true
+const fetchThreads = async (showLoading = true) => {
+  if (showLoading) loading.value = true
   try {
     threads.value = await listThreads()
   } finally {
-    loading.value = false
+    if (showLoading) loading.value = false
   }
 }
 
 onMounted(async () => {
-  await fetchThreads()
-  timer = setInterval(fetchThreads, 5000)
+  await fetchThreads(true)
+  timer = setInterval(() => fetchThreads(false), 5000)
 })
 
 onBeforeUnmount(() => {
@@ -46,7 +46,7 @@ onBeforeUnmount(() => {
         <el-table-column label="最后消息" prop="lastMessageContent" min-width="240" />
         <el-table-column label="未读" width="90">
           <template #default="{ row }">
-            <el-badge :value="row.unreadCount || 0" :max="99" />
+            <el-badge :value="row.unreadCount || 0" :max="99" :hidden="!row.unreadCount" />
           </template>
         </el-table-column>
         <el-table-column label="更新时间" width="180">

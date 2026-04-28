@@ -157,6 +157,7 @@ public class ItemPostServiceImpl implements ItemPostService {
                 .publisherAvatar(publisher == null ? null : publisher.getAvatarUrl())
                 .coverImageUrl(imageUrls.isEmpty() ? null : imageUrls.get(0))
                 .descriptionSummary(buildDescriptionSummary(itemPost.getDescription()))
+                .publisherUserId(itemPost.getPublisherUserId())
                 .description(itemPost.getDescription())
                 .locationText(itemPost.getLocationText())
                 .contactInfo(showContactInfo(itemPost, currentUserId))
@@ -275,6 +276,7 @@ public class ItemPostServiceImpl implements ItemPostService {
                 .publisherAvatar(publisher == null ? null : publisher.getAvatarUrl())
                 .coverImageUrl(coverImage == null ? null : coverImage.getUrl())
                 .descriptionSummary(buildDescriptionSummary(itemPost.getDescription()))
+                .publisherUserId(itemPost.getPublisherUserId())
                 .contactInfo(null)
                 .build();
     }

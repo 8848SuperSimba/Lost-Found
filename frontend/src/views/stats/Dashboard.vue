@@ -1,6 +1,7 @@
 <script setup>
 import { nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import * as echarts from 'echarts'
+import { ElMessage } from 'element-plus'
 import { getAreaStats, getCategoryStats, getOverview, getTrendStats } from '../../api/stats'
 
 const loading = reactive({
@@ -51,6 +52,8 @@ const fetchCharts = async () => {
     trendList.value = trend
     await nextTick()
     renderCharts()
+  } catch (e) {
+    ElMessage.error('统计数据加载失败，请刷新重试')
   } finally {
     loading.category = false
     loading.area = false
@@ -123,7 +126,7 @@ onBeforeUnmount(() => {
         <div class="card-block"><div>已找回</div><h3>{{ overview?.resolvedCount ?? '-' }}</h3></div>
       </el-col>
       <el-col :md="4" :sm="12" :xs="12">
-        <div class="card-block"><div>找回率</div><h3>{{ overview?.resolvedRate ?? '-' }}</h3></div>
+        <div class="card-block"><div>找回率</div><h3 style="color: #67c23a">{{ overview?.resolvedRate ?? '-' }}</h3></div>
       </el-col>
       <el-col :md="4" :sm="12" :xs="12">
         <div class="card-block"><div>今日新增</div><h3>{{ overview?.todayCount ?? '-' }}</h3></div>
@@ -147,12 +150,12 @@ onBeforeUnmount(() => {
         </el-radio-group>
       </div>
       <el-row :gutter="16">
-        <el-col :md="12" :sm="24">
+        <el-col :md="12" :sm="24" style="min-height: 340px">
           <el-skeleton :loading="loading.category" animated>
             <div ref="categoryRef" style="height: 320px" />
           </el-skeleton>
         </el-col>
-        <el-col :md="12" :sm="24">
+        <el-col :md="12" :sm="24" style="min-height: 340px">
           <el-skeleton :loading="loading.area" animated>
             <div ref="areaRef" style="height: 320px" />
           </el-skeleton>

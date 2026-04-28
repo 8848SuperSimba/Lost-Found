@@ -9,6 +9,7 @@ import { toDateTimeParam } from '../../utils/format'
 const route = useRoute()
 const router = useRouter()
 const loading = ref(false)
+const existingImageUrls = ref([])
 
 const form = reactive({
   title: '',
@@ -36,18 +37,23 @@ const loadDetail = async () => {
   form.contactInfo = detail.contactInfo || ''
   form.reward = detail.reward || ''
   form.keywords = detail.keywords || []
+  existingImageUrls.value = detail.imageUrls || []
 }
 
 const submit = async () => {
   loading.value = true
   try {
     const files = (form.localImages || []).map((item) => item.raw).filter(Boolean)
-    let imageUrls = null
+    let imageUrls
     if (files.length > 0) {
+      // 用户选择了新图片，上传并替换
       imageUrls = []
       for (const file of files) {
         imageUrls.push(await uploadImage(file))
       }
+    } else {
+      // 用户未选新图片，沿用原有图片（null 表示不更新该字段）
+      imageUrls = existingImageUrls.value.length > 0 ? existingImageUrls.value : null
     }
     await updatePost(route.params.id, {
       title: form.title || null,
@@ -76,6 +82,22 @@ onMounted(loadDetail)
   <div class="page-container">
     <div class="card-block">
       <h2 class="page-title">编辑帖子</h2>
+      <div v-if="existingImageUrls.length > 0" style="margin-bottom: 16px">
+        <div style="margin-bottom: 8px">当前图片</div>
+        <el-space wrap>
+          <el-image
+            v-for="(img, idx) in existingImageUrls"
+            :key="idx"
+            :src="img"
+            style="width: 100px; height: 100px; border-radius: 4px"
+            fit="cover"
+            :preview-src-list="existingImageUrls"
+          />
+        </el-space>
+        <div style="margin-top: 4px; color: #909399; font-size: 12px">
+          如需更换图片，请在下方重新上传（上传后将替换全部现有图片）
+        </div>
+      </div>
       <PostForm v-model="form" :include-post-type="false" />
       <el-button type="primary" :loading="loading" @click="submit">保存修改</el-button>
     </div>

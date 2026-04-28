@@ -36,13 +36,17 @@ const handleRematch = async () => {
 
 const handleCreateThread = async (targetPostId) => {
   if (!sourcePost.value) return
-  const payload =
-    sourcePost.value.postType === 'LOST'
-      ? { lostPostId: sourcePost.value.id, foundPostId: targetPostId }
-      : { lostPostId: targetPostId, foundPostId: sourcePost.value.id }
-  const thread = await createThread(payload)
-  ElMessage.success('会话建立成功')
-  await router.push(`/threads/${thread.id}`)
+  try {
+    const payload =
+      sourcePost.value.postType === 'LOST'
+        ? { lostPostId: sourcePost.value.id, foundPostId: targetPostId }
+        : { lostPostId: targetPostId, foundPostId: sourcePost.value.id }
+    const thread = await createThread(payload)
+    ElMessage.success('会话建立成功')
+    await router.push(`/threads/${thread.id}`)
+  } catch {
+    // 拦截器处理错误
+  }
 }
 
 onMounted(loadData)
@@ -54,6 +58,12 @@ onMounted(loadData)
       <div style="display: flex; justify-content: space-between; align-items: center">
         <h2 class="page-title" style="margin-bottom: 0">匹配结果</h2>
         <el-button type="primary" :loading="rematching" @click="handleRematch">重新匹配</el-button>
+      </div>
+      <div v-if="sourcePost" style="color: #606266; font-size: 14px; margin: 8px 0 12px">
+        帖子：{{ sourcePost.title }}
+        <el-tag size="small" style="margin-left: 8px">
+          {{ sourcePost.postType === 'LOST' ? '失物' : '寻物' }}
+        </el-tag>
       </div>
       <el-table :data="matches" v-loading="loading">
         <el-table-column label="相似度" width="120">
@@ -77,6 +87,11 @@ onMounted(loadData)
           </template>
         </el-table-column>
       </el-table>
+      <el-empty
+        v-if="!loading && matches.length === 0"
+        description="暂时没有找到匹配结果，可尝试重新匹配"
+        style="padding: 40px 0"
+      />
     </div>
   </div>
 </template>

@@ -31,4 +31,5 @@ public class PostVO {
     private String reward;
     private List<String> keywords;
     private List<String> imageUrls;
+    private Long publisherUserId;
 }

@@ -67,7 +67,7 @@ onMounted(fetchData)
         <el-select v-model="query.category" placeholder="分类" clearable style="width: 150px">
           <el-option v-for="item in CATEGORY_OPTIONS" :key="item.value" :label="item.label" :value="item.value" />
         </el-select>
-        <el-input v-model="query.areaCode" placeholder="区域编码" style="width: 130px" clearable />
+        <el-input v-model="query.areaCode" placeholder="区域编码（如 A01）" style="width: 160px" clearable />
         <el-select v-model="query.status" placeholder="状态" clearable style="width: 130px">
           <el-option label="进行中" value="OPEN" />
           <el-option label="已匹配" value="MATCHED" />

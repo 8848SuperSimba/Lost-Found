@@ -4,6 +4,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { getPostDetail } from '../../api/post'
 import { getMatches } from '../../api/match'
+import { createThread } from '../../api/thread'
 import { useAuthStore } from '../../stores/auth'
 import { CATEGORY_LABEL, POST_TYPE_LABEL, STATUS_LABEL } from '../../utils/dict'
 import { formatDateTime } from '../../utils/format'
@@ -15,7 +16,12 @@ const detail = ref(null)
 const loading = ref(false)
 const matches = ref([])
 
-const isOwner = computed(() => authStore.user?.nickname && detail.value?.publisherNickname === authStore.user.nickname)
+const isOwner = computed(
+  () =>
+    authStore.user?.id &&
+    detail.value?.publisherUserId &&
+    Number(authStore.user.id) === Number(detail.value.publisherUserId),
+)
 
 const loadDetail = async () => {
   loading.value = true
@@ -35,10 +41,21 @@ const loadDetail = async () => {
 
 const openCreateThread = async (matchedPostId) => {
   if (!authStore.token) {
-    ElMessage.warning('请先登录')
+    ElMessage.warning('请先登录后再联系对方')
     return
   }
-  await router.push(`/my/posts/${route.params.id}/matches?target=${matchedPostId}`)
+  if (!detail.value) return
+  try {
+    const payload =
+      detail.value.postType === 'LOST'
+        ? { lostPostId: detail.value.id, foundPostId: matchedPostId }
+        : { lostPostId: matchedPostId, foundPostId: detail.value.id }
+    const thread = await createThread(payload)
+    ElMessage.success('会话建立成功，即将跳转到聊天页')
+    await router.push(`/threads/${thread.id}`)
+  } catch {
+    // HTTP 拦截器已处理错误提示
+  }
 }
 
 onMounted(loadDetail)
@@ -105,7 +122,9 @@ onMounted(loadDetail)
         </el-table-column>
         <el-table-column width="140">
           <template #default="{ row }">
-            <el-button type="primary" text @click="openCreateThread(row.post.id)">联系TA</el-button>
+            <el-button type="primary" text @click="openCreateThread(row.post.id)">
+              {{ detail?.postType === 'LOST' ? '我捡到了，联系失主' : '这是我丢的，联系拾主' }}
+            </el-button>
           </template>
         </el-table-column>
       </el-table>

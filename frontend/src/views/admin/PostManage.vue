@@ -69,6 +69,15 @@ onMounted(fetchData)
           </template>
         </el-table-column>
       </el-table>
+      <div style="margin-top: 16px; display: flex; justify-content: flex-end">
+        <el-pagination
+          v-model:current-page="pager.page"
+          v-model:page-size="pager.size"
+          :total="pager.total"
+          layout="total, prev, pager, next"
+          @current-change="fetchData"
+        />
+      </div>
     </div>
   </div>
 </template>

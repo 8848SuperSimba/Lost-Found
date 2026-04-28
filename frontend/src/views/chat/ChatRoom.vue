@@ -1,11 +1,11 @@
 <script setup>
 import { nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
-import { useRoute } from 'vue-router'
-import { ElMessage } from 'element-plus'
+import { useRoute, useRouter } from 'vue-router'
 import { getThreadDetail, getThreadMessages, sendMessage } from '../../api/thread'
 import { formatDateTime } from '../../utils/format'
 
 const route = useRoute()
+const router = useRouter()
 const loading = ref(false)
 const detail = ref(null)
 const messages = ref([])
@@ -17,8 +17,8 @@ const loadDetail = async () => {
   detail.value = await getThreadDetail(route.params.id)
 }
 
-const loadMessages = async () => {
-  loading.value = true
+const loadMessages = async (silent = false) => {
+  if (!silent) loading.value = true
   try {
     const page = await getThreadMessages(route.params.id, { page: 1, size: 200 })
     messages.value = page.records || []
@@ -27,7 +27,7 @@ const loadMessages = async () => {
       listRef.value.scrollTop = listRef.value.scrollHeight
     }
   } finally {
-    loading.value = false
+    if (!silent) loading.value = false
   }
 }
 
@@ -45,8 +45,8 @@ const handleSend = async () => {
 
 onMounted(async () => {
   await loadDetail()
-  await loadMessages()
-  timer = setInterval(loadMessages, 5000)
+  await loadMessages(false)
+  timer = setInterval(() => loadMessages(true), 5000)
 })
 
 onBeforeUnmount(() => {
@@ -58,9 +58,11 @@ onBeforeUnmount(() => {
   <div class="page-container">
     <div class="card-block">
       <h2 class="page-title" style="margin-bottom: 8px">{{ detail?.relatedPostTitle || '会话详情' }}</h2>
-      <p style="margin: 0 0 12px; color: #909399">
-        对方联系方式：{{ detail?.otherContactInfo || '对方未留联系方式' }}
-      </p>
+      <div style="margin: 0 0 12px; color: #606266; font-size: 14px">
+        <span>对方联系方式：{{ detail?.otherContactInfo || '对方未填写联系方式' }}</span>
+        <el-divider direction="vertical" />
+        <span>我的联系方式：{{ detail?.myContactInfo || '我未填写联系方式（可在帖子中补充）' }}</span>
+      </div>
       <div
         ref="listRef"
         v-loading="loading"
@@ -93,6 +95,9 @@ onBeforeUnmount(() => {
       </div>
 
       <el-alert v-if="detail?.status === 'CLOSED'" title="会话已关闭，无法发送消息" type="warning" style="margin-top: 12px" />
+      <div style="margin-top: 8px" v-if="detail?.status === 'CLOSED'">
+        <el-button @click="router.push('/threads')">返回会话列表</el-button>
+      </div>
       <el-input
         v-model="input"
         type="textarea"

@@ -56,7 +56,14 @@ onMounted(fetchData)
 
       <el-table :data="list" v-loading="loading">
         <el-table-column label="类型" width="120">
-          <template #default="{ row }">{{ row.type }}</template>
+          <template #default="{ row }">
+            <el-tag
+              :type="row.type === 'MATCH' ? 'warning' : row.type === 'MESSAGE' ? 'success' : 'info'"
+              size="small"
+            >
+              {{ { MATCH: '匹配通知', MESSAGE: '消息通知', SYSTEM: '系统通知' }[row.type] || row.type }}
+            </el-tag>
+          </template>
         </el-table-column>
         <el-table-column label="标题" prop="title" min-width="200" />
         <el-table-column label="内容" prop="content" min-width="260" />
@@ -74,6 +81,16 @@ onMounted(fetchData)
           </template>
         </el-table-column>
       </el-table>
+      <el-empty v-if="!loading && list.length === 0" description="暂无通知" style="padding: 32px 0" />
+      <div style="margin-top: 16px; display: flex; justify-content: flex-end">
+        <el-pagination
+          v-model:current-page="pager.page"
+          v-model:page-size="pager.size"
+          :total="pager.total"
+          layout="total, prev, pager, next"
+          @current-change="fetchData"
+        />
+      </div>
     </div>
   </div>
 </template>

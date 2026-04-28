@@ -69,6 +69,10 @@ onMounted(loadMe)
             <el-descriptions-item label="用户名">{{ authStore.user?.username || '-' }}</el-descriptions-item>
             <el-descriptions-item label="手机号">{{ authStore.user?.phone || '-' }}</el-descriptions-item>
             <el-descriptions-item label="角色">{{ authStore.user?.role || '-' }}</el-descriptions-item>
+            <el-descriptions-item label="微信绑定">
+              <el-tag v-if="authStore.user?.wxOpenid" type="success">已绑定</el-tag>
+              <span v-else style="color: #909399">未绑定（可通过扫码公众号后在站内完善账号）</span>
+            </el-descriptions-item>
             <el-descriptions-item label="注册时间">{{ formatDateTime(authStore.user?.createdAt) }}</el-descriptions-item>
           </el-descriptions>
           <el-divider />

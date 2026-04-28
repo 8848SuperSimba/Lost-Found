@@ -55,14 +55,22 @@ onBeforeUnmount(() => {
   <el-container style="min-height: 100vh">
     <el-header style="background: #fff; border-bottom: 1px solid #ebeef5">
       <div style="display: flex; align-items: center; justify-content: space-between; height: 100%">
-        <el-space :size="18">
+        <el-space :size="18" wrap>
           <div style="font-size: 18px; font-weight: 700; cursor: pointer" @click="router.push('/home')">
             校园失物招领系统
           </div>
           <el-link
             v-for="item in menuItems"
             :key="item.path"
-            :type="router.currentRoute.value.path.startsWith(item.path) ? 'primary' : 'default'"
+            :type="
+              (item.path === '/home'
+                ? router.currentRoute.value.path === item.path
+                : item.path === '/posts'
+                  ? router.currentRoute.value.path === '/posts'
+                  : router.currentRoute.value.path.startsWith(item.path))
+                ? 'primary'
+                : 'default'
+            "
             :underline="false"
             @click="router.push(item.path)"
           >

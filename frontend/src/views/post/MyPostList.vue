@@ -15,9 +15,12 @@ const loading = ref(false)
 const loadMyPosts = async () => {
   loading.value = true
   try {
-    const page = await listPosts({ page: 1, size: 100 })
-    const records = page.records || []
-    posts.value = records.filter((item) => item.publisherNickname === authStore.user?.nickname)
+    const page = await listPosts({
+      publisherUserId: authStore.user?.id,
+      page: 1,
+      size: 50,
+    })
+    posts.value = page.records || []
   } finally {
     loading.value = false
   }
