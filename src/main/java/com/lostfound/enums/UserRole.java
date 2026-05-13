@@ -9,7 +9,8 @@ import lombok.RequiredArgsConstructor;
 @RequiredArgsConstructor
 public enum UserRole implements IEnum<String> {
     USER("USER"),
-    ADMIN("ADMIN");
+    ADMIN("ADMIN"),
+    SUPER_ADMIN("SUPER_ADMIN");
 
     @EnumValue
     private final String value;
@@ -17,5 +18,13 @@ public enum UserRole implements IEnum<String> {
     @Override
     public String getValue() {
         return value;
+    }
+
+    public boolean canAccessAdminPanel() {
+        return this == ADMIN || this == SUPER_ADMIN;
+    }
+
+    public boolean canGrantAdminRole() {
+        return this == SUPER_ADMIN;
     }
 }

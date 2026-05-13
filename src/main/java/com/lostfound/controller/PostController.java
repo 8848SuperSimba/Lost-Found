@@ -156,6 +156,8 @@ public class PostController {
             return false;
         }
         return authentication.getAuthorities().stream()
-                .anyMatch(authority -> "ROLE_ADMIN".equals(authority.getAuthority()));
+                .anyMatch(authority ->
+                        "ROLE_ADMIN".equals(authority.getAuthority())
+                                || "ROLE_SUPER_ADMIN".equals(authority.getAuthority()));
     }
 }

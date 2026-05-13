@@ -3,10 +3,12 @@ package com.lostfound.service.impl;
 import com.lostfound.common.ResultCode;
 import com.lostfound.exception.BusinessException;
 import com.lostfound.service.UploadService;
+import com.lostfound.util.PublicUrlResolver;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.nio.file.StandardCopyOption;
 import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
 import java.util.Locale;
@@ -28,6 +30,12 @@ public class UploadServiceImpl implements UploadService {
     @Value("${upload.max-size}")
     private long maxSize;
 
+    private final PublicUrlResolver publicUrlResolver;
+
+    public UploadServiceImpl(PublicUrlResolver publicUrlResolver) {
+        this.publicUrlResolver = publicUrlResolver;
+    }
+
     @Override
     public String uploadImage(MultipartFile file) {
         if (file == null || file.isEmpty()) {
@@ -46,19 +54,21 @@ public class UploadServiceImpl implements UploadService {
         String monthDir = LocalDate.now().format(DateTimeFormatter.ofPattern("yyyy-MM"));
         String generatedName = UUID.randomUUID().toString().replace("-", "") + "." + extension.toLowerCase(Locale.ROOT);
 
-        String rootPath = StringUtils.trimTrailingCharacter(uploadPath, '/');
-        Path targetDir = Paths.get(rootPath, monthDir);
+        Path rootDir = Paths.get(uploadPath).toAbsolutePath().normalize();
+        Path targetDir = rootDir.resolve(monthDir);
         try {
-            if (!Files.exists(targetDir)) {
-                Files.createDirectories(targetDir);
-            }
+            Files.createDirectories(targetDir);
             Path targetFile = targetDir.resolve(generatedName);
-            file.transferTo(targetFile.toFile());
+            try (var inputStream = file.getInputStream()) {
+                Files.copy(inputStream, targetFile, StandardCopyOption.REPLACE_EXISTING);
+            }
         } catch (IOException ex) {
             throw new BusinessException(ResultCode.ERROR, "上传文件失败");
         }
 
-        return "/" + rootPath + "/" + monthDir + "/" + generatedName;
+        String rootPath = StringUtils.trimTrailingCharacter(uploadPath, '/');
+        String relative = "/" + rootPath + "/" + monthDir + "/" + generatedName;
+        return publicUrlResolver.resolveUploadUrl(relative);
     }
 
     private String getExtension(String filename) {

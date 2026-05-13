@@ -9,7 +9,8 @@ export const useAuthStore = defineStore('auth', () => {
   const token = ref(localStorage.getItem(TOKEN_KEY) || '')
   const user = ref(localStorage.getItem(USER_KEY) ? JSON.parse(localStorage.getItem(USER_KEY)) : null)
 
-  const isAdmin = computed(() => user.value?.role === 'ADMIN')
+  const isSuperAdmin = computed(() => user.value?.role === 'SUPER_ADMIN')
+  const isAdmin = computed(() => ['ADMIN', 'SUPER_ADMIN'].includes(user.value?.role))
 
   const setAuth = (newToken, newUser) => {
     token.value = newToken
@@ -36,6 +37,7 @@ export const useAuthStore = defineStore('auth', () => {
     token,
     user,
     isAdmin,
+    isSuperAdmin,
     setAuth,
     clearAuth,
     fetchMe,

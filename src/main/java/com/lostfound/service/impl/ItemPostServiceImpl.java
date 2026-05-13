@@ -18,6 +18,7 @@ import com.lostfound.mapper.ItemKeywordMapper;
 import com.lostfound.mapper.ItemPostMapper;
 import com.lostfound.mapper.UserMapper;
 import com.lostfound.service.ItemPostService;
+import com.lostfound.util.PublicUrlResolver;
 import com.lostfound.vo.PostVO;
 import java.time.LocalDateTime;
 import java.util.Collections;
@@ -35,18 +36,21 @@ public class ItemPostServiceImpl implements ItemPostService {
     private final ItemImageMapper itemImageMapper;
     private final UserMapper userMapper;
     private final JdbcTemplate jdbcTemplate;
+    private final PublicUrlResolver publicUrlResolver;
 
     public ItemPostServiceImpl(
             ItemPostMapper itemPostMapper,
             ItemKeywordMapper itemKeywordMapper,
             ItemImageMapper itemImageMapper,
             UserMapper userMapper,
-            JdbcTemplate jdbcTemplate) {
+            JdbcTemplate jdbcTemplate,
+            PublicUrlResolver publicUrlResolver) {
         this.itemPostMapper = itemPostMapper;
         this.itemKeywordMapper = itemKeywordMapper;
         this.itemImageMapper = itemImageMapper;
         this.userMapper = userMapper;
         this.jdbcTemplate = jdbcTemplate;
+        this.publicUrlResolver = publicUrlResolver;
     }
 
     @Override
@@ -142,7 +146,10 @@ public class ItemPostServiceImpl implements ItemPostService {
                         .orderByAsc(ItemImage::getSort))
                 .stream()
                 .map(ItemImage::getUrl)
+                .map(publicUrlResolver::resolveUploadUrl)
                 .toList();
+
+        String cover = imageUrls.isEmpty() ? null : imageUrls.get(0);
 
         return PostVO.builder()
                 .id(itemPost.getId())
@@ -155,8 +162,11 @@ public class ItemPostServiceImpl implements ItemPostService {
                 .createdAt(itemPost.getCreatedAt())
                 .status(itemPost.getStatus())
                 .publisherNickname(publisher == null ? null : publisher.getNickname())
-                .publisherAvatar(publisher == null ? null : publisher.getAvatarUrl())
-                .coverImageUrl(imageUrls.isEmpty() ? null : imageUrls.get(0))
+                .publisherAvatar(
+                        publisher == null || !StringUtils.hasText(publisher.getAvatarUrl())
+                                ? null
+                                : publicUrlResolver.resolveUploadUrl(publisher.getAvatarUrl()))
+                .coverImageUrl(cover)
                 .descriptionSummary(buildDescriptionSummary(itemPost.getDescription()))
                 .publisherUserId(itemPost.getPublisherUserId())
                 .description(itemPost.getDescription())
@@ -203,7 +213,7 @@ public class ItemPostServiceImpl implements ItemPostService {
             itemKeywordMapper.delete(new LambdaQueryWrapper<ItemKeyword>().eq(ItemKeyword::getPostId, postId));
             saveKeywords(postId, request.getKeywords());
         }
-        if (request.getImageUrls() != null) {
+        if (request.getImageUrls() != null && !request.getImageUrls().isEmpty()) {
             itemImageMapper.delete(new LambdaQueryWrapper<ItemImage>().eq(ItemImage::getPostId, postId));
             saveImages(postId, request.getImageUrls());
         }
@@ -264,6 +274,7 @@ public class ItemPostServiceImpl implements ItemPostService {
                     .last("LIMIT 1"));
         }
 
+        String coverUrl = coverImage == null ? null : publicUrlResolver.resolveUploadUrl(coverImage.getUrl());
         return PostVO.builder()
                 .id(itemPost.getId())
                 .postType(itemPost.getPostType())
@@ -275,8 +286,11 @@ public class ItemPostServiceImpl implements ItemPostService {
                 .createdAt(itemPost.getCreatedAt())
                 .status(itemPost.getStatus())
                 .publisherNickname(publisher == null ? null : publisher.getNickname())
-                .publisherAvatar(publisher == null ? null : publisher.getAvatarUrl())
-                .coverImageUrl(coverImage == null ? null : coverImage.getUrl())
+                .publisherAvatar(
+                        publisher == null || !StringUtils.hasText(publisher.getAvatarUrl())
+                                ? null
+                                : publicUrlResolver.resolveUploadUrl(publisher.getAvatarUrl()))
+                .coverImageUrl(coverUrl)
                 .descriptionSummary(buildDescriptionSummary(itemPost.getDescription()))
                 .publisherUserId(itemPost.getPublisherUserId())
                 .contactInfo(null)
@@ -304,8 +318,9 @@ public class ItemPostServiceImpl implements ItemPostService {
             if (!StringUtils.hasText(imageUrl)) {
                 continue;
             }
+            String stored = publicUrlResolver.normalizeStoredPath(imageUrl.trim());
             itemImageMapper.insert(
-                    ItemImage.builder().postId(postId).url(imageUrl.trim()).sort(i).build());
+                    ItemImage.builder().postId(postId).url(stored).sort(i).build());
         }
     }
 

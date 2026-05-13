@@ -42,8 +42,8 @@ const onImageChange = (files) => {
       <el-col :md="12" :sm="24">
         <el-form-item v-if="includePostType" label="帖子类型">
           <el-radio-group :model-value="modelValue.postType" @update:model-value="(v) => update('postType', v)">
-            <el-radio-button label="LOST">失物</el-radio-button>
-            <el-radio-button label="FOUND">寻物</el-radio-button>
+            <el-radio-button value="LOST">失物</el-radio-button>
+            <el-radio-button value="FOUND">寻物</el-radio-button>
           </el-radio-group>
         </el-form-item>
       </el-col>

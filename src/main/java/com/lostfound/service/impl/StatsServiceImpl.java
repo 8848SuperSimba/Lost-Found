@@ -17,36 +17,23 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
-import java.util.concurrent.TimeUnit;
-import lombok.extern.slf4j.Slf4j;
-import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
 
-@Slf4j
 @Service
 public class StatsServiceImpl implements StatsService {
 
-    private static final String OVERVIEW_KEY = "stats:overview";
-    private static final String USER_STATS_KEY = "stats:users";
     private static final DateTimeFormatter DATE_FORMATTER = DateTimeFormatter.ofPattern("yyyy-MM-dd");
 
     private final JdbcTemplate jdbcTemplate;
-    private final RedisTemplate<String, Object> redisTemplate;
 
-    public StatsServiceImpl(JdbcTemplate jdbcTemplate, RedisTemplate<String, Object> redisTemplate) {
+    public StatsServiceImpl(JdbcTemplate jdbcTemplate) {
         this.jdbcTemplate = jdbcTemplate;
-        this.redisTemplate = redisTemplate;
     }
 
     @Override
     public OverviewVO getOverview() {
-        Object cached = safeRedisGet(OVERVIEW_KEY);
-        if (cached instanceof OverviewVO overviewVO) {
-            return overviewVO;
-        }
-
         Long lostCount = queryCount("SELECT COUNT(*) FROM item_post WHERE post_type = 'LOST'");
         Long foundCount = queryCount("SELECT COUNT(*) FROM item_post WHERE post_type = 'FOUND'");
         Long resolvedCount = queryCount("SELECT COUNT(*) FROM item_post WHERE status = 'RESOLVED'");
@@ -61,7 +48,7 @@ public class StatsServiceImpl implements StatsService {
             resolvedRate = rate.toPlainString() + "%";
         }
 
-        OverviewVO result = OverviewVO.builder()
+        return OverviewVO.builder()
                 .lostCount(defaultCount(lostCount))
                 .foundCount(defaultCount(foundCount))
                 .resolvedCount(defaultCount(resolvedCount))
@@ -69,20 +56,10 @@ public class StatsServiceImpl implements StatsService {
                 .todayCount(defaultCount(todayCount))
                 .openCount(defaultCount(openCount))
                 .build();
-        safeRedisSet(OVERVIEW_KEY, result, 5, TimeUnit.MINUTES);
-        return result;
     }
 
     @Override
     public List<CategoryStatVO> getCategoryStats(String postType, Integer days) {
-        String key = "stats:category:" + normalizeKeyPart(postType) + ":" + normalizeKeyPart(days);
-        Object cached = safeRedisGet(key);
-        if (cached instanceof List<?> list) {
-            @SuppressWarnings("unchecked")
-            List<CategoryStatVO> categoryStats = (List<CategoryStatVO>) list;
-            return categoryStats;
-        }
-
         StringBuilder sql = new StringBuilder();
         sql.append("SELECT category, COUNT(*) AS count ")
                 .append("FROM item_post ")
@@ -101,36 +78,27 @@ public class StatsServiceImpl implements StatsService {
         List<Map<String, Object>> rows = jdbcTemplate.queryForList(sql.toString(), params.toArray());
         long total = rows.stream().mapToLong(row -> ((Number) row.get("count")).longValue()).sum();
 
-        List<CategoryStatVO> result = rows.stream().map(row -> {
-            String categoryValue = String.valueOf(row.get("category"));
-            long count = ((Number) row.get("count")).longValue();
-            BigDecimal percent = total == 0
-                    ? BigDecimal.ZERO
-                    : BigDecimal.valueOf(count)
-                            .multiply(BigDecimal.valueOf(100))
-                            .divide(BigDecimal.valueOf(total), 2, RoundingMode.HALF_UP);
-            return CategoryStatVO.builder()
-                    .categoryValue(categoryValue)
-                    .categoryDesc(resolveCategoryDesc(categoryValue))
-                    .count(count)
-                    .percentage(percent.toPlainString() + "%")
-                    .build();
-        }).toList();
-
-        safeRedisSet(key, result, 5, TimeUnit.MINUTES);
-        return result;
+        return rows.stream()
+                .map(row -> {
+                    String categoryValue = String.valueOf(row.get("category"));
+                    long count = ((Number) row.get("count")).longValue();
+                    BigDecimal percent = total == 0
+                            ? BigDecimal.ZERO
+                            : BigDecimal.valueOf(count)
+                                    .multiply(BigDecimal.valueOf(100))
+                                    .divide(BigDecimal.valueOf(total), 2, RoundingMode.HALF_UP);
+                    return CategoryStatVO.builder()
+                            .categoryValue(categoryValue)
+                            .categoryDesc(resolveCategoryDesc(categoryValue))
+                            .count(count)
+                            .percentage(percent.toPlainString() + "%")
+                            .build();
+                })
+                .toList();
     }
 
     @Override
     public List<AreaStatVO> getAreaStats(String postType, Integer days) {
-        String key = "stats:area:" + normalizeKeyPart(postType) + ":" + normalizeKeyPart(days);
-        Object cached = safeRedisGet(key);
-        if (cached instanceof List<?> list) {
-            @SuppressWarnings("unchecked")
-            List<AreaStatVO> areaStats = (List<AreaStatVO>) list;
-            return areaStats;
-        }
-
         StringBuilder sql = new StringBuilder();
         sql.append("SELECT area_code, area_text, COUNT(*) AS count ")
                 .append("FROM item_post ")
@@ -146,7 +114,7 @@ public class StatsServiceImpl implements StatsService {
         }
         sql.append("GROUP BY area_code, area_text ORDER BY count DESC");
 
-        List<AreaStatVO> result = jdbcTemplate.query(
+        return jdbcTemplate.query(
                 sql.toString(),
                 (rs, rowNum) -> AreaStatVO.builder()
                         .areaCode(rs.getString("area_code"))
@@ -154,21 +122,11 @@ public class StatsServiceImpl implements StatsService {
                         .count(rs.getLong("count"))
                         .build(),
                 params.toArray());
-
-        safeRedisSet(key, result, 5, TimeUnit.MINUTES);
-        return result;
     }
 
     @Override
     public List<TrendStatVO> getTrend(String postType, Integer days) {
         int queryDays = days == null ? 30 : days;
-        String key = "stats:trend:" + normalizeKeyPart(postType) + ":" + queryDays;
-        Object cached = safeRedisGet(key);
-        if (cached instanceof List<?> list) {
-            @SuppressWarnings("unchecked")
-            List<TrendStatVO> trendStats = (List<TrendStatVO>) list;
-            return trendStats;
-        }
 
         StringBuilder sql = new StringBuilder();
         sql.append("SELECT DATE(created_at) AS date, COUNT(*) AS count ")
@@ -205,48 +163,22 @@ public class StatsServiceImpl implements StatsService {
                     .count(countByDate.getOrDefault(date, 0L))
                     .build());
         }
-
-        safeRedisSet(key, result, 5, TimeUnit.MINUTES);
         return result;
     }
 
     @Override
     public UserStatVO getUserStats() {
-        Object cached = safeRedisGet(USER_STATS_KEY);
-        if (cached instanceof UserStatVO userStatVO) {
-            return userStatVO;
-        }
-
         Long totalCount = queryCount("SELECT COUNT(*) FROM `user`");
         Long todayCount = queryCount("SELECT COUNT(*) FROM `user` WHERE DATE(created_at) = CURDATE()");
         Long bannedCount = queryCount("SELECT COUNT(*) FROM `user` WHERE status = 'BANNED'");
         Long activeCount = queryCount("SELECT COUNT(*) FROM `user` WHERE last_login_at >= DATE_SUB(NOW(), INTERVAL 7 DAY)");
 
-        UserStatVO result = UserStatVO.builder()
+        return UserStatVO.builder()
                 .totalCount(defaultCount(totalCount))
                 .todayCount(defaultCount(todayCount))
                 .bannedCount(defaultCount(bannedCount))
                 .activeCount(defaultCount(activeCount))
                 .build();
-        safeRedisSet(USER_STATS_KEY, result, 5, TimeUnit.MINUTES);
-        return result;
-    }
-
-    private Object safeRedisGet(String key) {
-        try {
-            return redisTemplate.opsForValue().get(key);
-        } catch (Exception ex) {
-            log.warn("读取 Redis 缓存失败，将直接查库: key={}, message={}", key, ex.getMessage());
-            return null;
-        }
-    }
-
-    private void safeRedisSet(String key, Object value, long timeout, TimeUnit unit) {
-        try {
-            redisTemplate.opsForValue().set(key, value, timeout, unit);
-        } catch (Exception ex) {
-            log.warn("写入 Redis 缓存失败: key={}, message={}", key, ex.getMessage());
-        }
     }
 
     private Long queryCount(String sql) {
@@ -255,10 +187,6 @@ public class StatsServiceImpl implements StatsService {
 
     private Long defaultCount(Long value) {
         return value == null ? 0L : value;
-    }
-
-    private String normalizeKeyPart(Object value) {
-        return value == null ? "ALL" : String.valueOf(value);
     }
 
     private String resolveCategoryDesc(String categoryValue) {

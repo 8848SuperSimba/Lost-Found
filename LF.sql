@@ -21,7 +21,7 @@ CREATE TABLE `user` (
   `password_hash` VARCHAR(255)    NULL COMMENT '微信用户可无密码',
   `nickname`      VARCHAR(64)     NULL,
   `avatar_url`    VARCHAR(512)    NULL,
-  `role`          ENUM('USER','ADMIN') NOT NULL DEFAULT 'USER',
+  `role`          ENUM('USER','ADMIN','SUPER_ADMIN') NOT NULL DEFAULT 'USER',
   `status`        ENUM('ACTIVE','BANNED') NOT NULL DEFAULT 'ACTIVE',
   `last_login_at` DATETIME        NULL,
   `created_at`    DATETIME        NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -33,6 +33,10 @@ CREATE TABLE `user` (
   UNIQUE KEY `uk_user_wx_openid` (`wx_openid`),
   KEY `idx_user_role_status` (`role`, `status`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- 初始管理员（账号：admin，密码：admin）
+INSERT INTO `user` (`username`, `password_hash`, `nickname`, `role`, `status`)
+VALUES ('admin', '$2b$10$eILk5cozzQA/pn5u9mvSNeswK4Zod8HQZh3.mqSGkpeyrZn.YGh/m', '初始管理员', 'SUPER_ADMIN', 'ACTIVE');
 
 -- ----------------------------
 -- item_post

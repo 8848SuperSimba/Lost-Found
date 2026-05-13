@@ -3,6 +3,10 @@ server:
   servlet:
     context-path: /
 
+# 可选：静态资源对外访问根地址（无尾斜杠）。前后端不同域、或 Nginx 未把 /uploads 指到本服务时填写，例如 https://api.example.com
+app:
+  public-base-url: ""
+
 spring:
   datasource:
     url: jdbc:mysql://localhost:3306/lost_found?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai&useSSL=false&allowPublicKeyRetrieval=true
@@ -33,7 +37,7 @@ mybatis-plus:
       logic-not-delete-value: 0
 
 jwt:
-  secret: bG9zdGZvdW5kLWp3dC1zZWNyZXQta2V5LTIwMjY=
+  secret: bG9zdGZvdW5kLWp3dC1zaWduaW5nLWtleS0yMDI2LXNlY3VyZSE=
   expiration: 604800000
 
 wx:

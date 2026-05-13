@@ -13,7 +13,6 @@ import com.lostfound.entity.User;
 import com.lostfound.enums.NotificationType;
 import com.lostfound.enums.PostStatus;
 import com.lostfound.enums.PostType;
-import com.lostfound.enums.UserRole;
 import com.lostfound.exception.BusinessException;
 import com.lostfound.mapper.ItemImageMapper;
 import com.lostfound.mapper.ItemKeywordMapper;
@@ -23,6 +22,7 @@ import com.lostfound.mapper.NotificationMapper;
 import com.lostfound.mapper.UserMapper;
 import com.lostfound.service.MatchService;
 import com.lostfound.service.NotificationService;
+import com.lostfound.util.PublicUrlResolver;
 import com.lostfound.vo.MatchVO;
 import com.lostfound.vo.PostVO;
 import java.math.BigDecimal;
@@ -54,6 +54,7 @@ public class MatchServiceImpl implements MatchService {
     private final UserMapper userMapper;
     private final NotificationService notificationService;
     private final ObjectMapper objectMapper;
+    private final PublicUrlResolver publicUrlResolver;
 
     @Value("${match.min-score:0.30}")
     private BigDecimal minScore;
@@ -69,7 +70,8 @@ public class MatchServiceImpl implements MatchService {
             NotificationMapper notificationMapper,
             UserMapper userMapper,
             NotificationService notificationService,
-            ObjectMapper objectMapper) {
+            ObjectMapper objectMapper,
+            PublicUrlResolver publicUrlResolver) {
         this.itemPostMapper = itemPostMapper;
         this.itemKeywordMapper = itemKeywordMapper;
         this.itemImageMapper = itemImageMapper;
@@ -78,6 +80,7 @@ public class MatchServiceImpl implements MatchService {
         this.userMapper = userMapper;
         this.notificationService = notificationService;
         this.objectMapper = objectMapper;
+        this.publicUrlResolver = publicUrlResolver;
     }
 
     @Override
@@ -118,7 +121,9 @@ public class MatchServiceImpl implements MatchService {
             throw new BusinessException(ResultCode.NOT_FOUND, "帖子不存在");
         }
         User currentUser = userMapper.selectById(currentUserId);
-        boolean isAdmin = currentUser != null && currentUser.getRole() == UserRole.ADMIN;
+        boolean isAdmin = currentUser != null
+                && currentUser.getRole() != null
+                && currentUser.getRole().canAccessAdminPanel();
         if (!isAdmin && !srcPost.getPublisherUserId().equals(currentUserId)) {
             throw new BusinessException(ResultCode.FORBIDDEN, "无权限查看匹配结果");
         }
@@ -321,8 +326,11 @@ public class MatchServiceImpl implements MatchService {
                 .createdAt(dstPost.getCreatedAt())
                 .status(dstPost.getStatus())
                 .publisherNickname(publisher == null ? null : publisher.getNickname())
-                .publisherAvatar(publisher == null ? null : publisher.getAvatarUrl())
-                .coverImageUrl(coverImage == null ? null : coverImage.getUrl())
+                .publisherAvatar(
+                        publisher == null || !StringUtils.hasText(publisher.getAvatarUrl())
+                                ? null
+                                : publicUrlResolver.resolveUploadUrl(publisher.getAvatarUrl()))
+                .coverImageUrl(coverImage == null ? null : publicUrlResolver.resolveUploadUrl(coverImage.getUrl()))
                 .descriptionSummary(buildDescriptionSummary(dstPost.getDescription()))
                 .contactInfo(null)
                 .build();

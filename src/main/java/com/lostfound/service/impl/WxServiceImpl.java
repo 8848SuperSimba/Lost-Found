@@ -43,12 +43,15 @@ import java.util.Comparator;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.UUID;
 import java.util.concurrent.TimeUnit;
+import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.data.redis.core.RedisTemplate;
+import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
 
@@ -60,6 +63,7 @@ public class WxServiceImpl implements WxService {
     private static final String DATA_KEY = "data";
     private static final String FLOW_ADMIN_POST = "ADMIN_POST";
     private static final String FLOW_SEARCH = "SEARCH";
+    private static final String FLOW_BIND = "BIND";
     private static final String STEP_ADMIN_TYPE = "ADMIN_TYPE";
     private static final String STEP_ADMIN_TITLE = "ADMIN_TITLE";
     private static final String STEP_ADMIN_CATEGORY = "ADMIN_CATEGORY";
@@ -74,9 +78,13 @@ public class WxServiceImpl implements WxService {
     private static final String STEP_SEARCH_KEYWORDS = "SEARCH_KEYWORDS";
     private static final String STEP_SEARCH_AREA = "SEARCH_AREA";
     private static final String STEP_SEARCH_TIME = "SEARCH_TIME";
+    private static final String STEP_BIND_IDENTIFIER = "BIND_IDENTIFIER";
+    private static final String STEP_BIND_PASSWORD = "BIND_PASSWORD";
     private static final DateTimeFormatter DATETIME_FORMATTER = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm");
+    private static final DateTimeFormatter DATETIME_SECONDS_FORMATTER = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
     private static final DateTimeFormatter DATE_FORMATTER = DateTimeFormatter.ofPattern("yyyy-MM-dd");
     private static final Pattern SPLIT_PATTERN = Pattern.compile("[,，\\s]+");
+    private static final Pattern AREA_CODE_PATTERN = Pattern.compile("^([A-Za-z]+)(0*)(\\d+)$");
 
     private final UserMapper userMapper;
     private final ItemPostMapper itemPostMapper;
@@ -85,6 +93,7 @@ public class WxServiceImpl implements WxService {
     private final ItemPostService itemPostService;
     private final RedisTemplate<String, Object> redisTemplate;
     private final ObjectMapper objectMapper;
+    private final PasswordEncoder passwordEncoder;
     private final HttpClient httpClient = HttpClient.newHttpClient();
 
     @Value("${wx.token}")
@@ -106,7 +115,8 @@ public class WxServiceImpl implements WxService {
             MatchResultMapper matchResultMapper,
             ItemPostService itemPostService,
             RedisTemplate<String, Object> redisTemplate,
-            ObjectMapper objectMapper) {
+            ObjectMapper objectMapper,
+            PasswordEncoder passwordEncoder) {
         this.userMapper = userMapper;
         this.itemPostMapper = itemPostMapper;
         this.itemKeywordMapper = itemKeywordMapper;
@@ -114,6 +124,7 @@ public class WxServiceImpl implements WxService {
         this.itemPostService = itemPostService;
         this.redisTemplate = redisTemplate;
         this.objectMapper = objectMapper;
+        this.passwordEncoder = passwordEncoder;
     }
 
     @Override
@@ -143,17 +154,23 @@ public class WxServiceImpl implements WxService {
         }
         if ("text".equals(msgType)) {
             String input = content == null ? "" : content.trim();
-            if ("取消".equals(input) || "取消发布".equals(input) || "取消查找".equals(input)) {
+            if ("取消".equals(input) || "取消发布".equals(input) || "取消全站找帖".equals(input) || "取消查找".equals(input) || "取消绑定".equals(input)) {
                 if (session != null) {
                     clearSession(openid);
                     return buildTextReply(openid, toUserName, "已取消当前操作。");
                 }
                 return buildTextReply(openid, toUserName, defaultGuideText());
             }
+            if ("绑定".equals(input)) {
+                if (session != null) {
+                    clearSession(openid);
+                }
+                return startBindFlow(openid, toUserName);
+            }
             if ("发布".equals(input)) {
                 return startAdminPublish(openid, toUserName);
             }
-            if ("查找".equals(input) || "搜索".equals(input)) {
+            if ("全站找帖".equals(input) || "查找".equals(input) || "搜索".equals(input)) {
                 return startSearchFlow(openid, toUserName);
             }
             if (session != null) {
@@ -164,8 +181,11 @@ public class WxServiceImpl implements WxService {
                 if (FLOW_SEARCH.equals(flow)) {
                     return handleSearchText(openid, toUserName, input, session);
                 }
+                if (FLOW_BIND.equals(flow)) {
+                    return handleBindText(openid, toUserName, input, session);
+                }
             }
-            if ("查询".equals(input) || "匹配".equals(input)) {
+            if ("我的匹配".equals(input) || "查询".equals(input) || "匹配".equals(input)) {
                 return handleQuery(openid, toUserName);
             }
             if ("我的帖子".equals(input)) {
@@ -187,17 +207,117 @@ public class WxServiceImpl implements WxService {
             userMapper.insert(newUser);
         }
         String welcomeText = "欢迎关注BISTU失物招领处！\n\n支持以下指令：\n"
-                + "【查询】查看您的最新匹配结果\n"
+                + "【绑定】关联您在网站注册的账号\n"
+                + "【我的匹配】查看您的最新匹配结果\n"
                 + "【我的帖子】查看您发布的帖子\n"
-                + "【查找】按关键词/区域/时间查相似帖子\n"
+                + "【全站找帖】按关键词/区域/时间查相似帖子\n"
                 + "【发布】管理员快速发布帖子";
         return buildTextReply(openid, toUserName, welcomeText);
+    }
+
+    private String startBindFlow(String openid, String toUserName) {
+        User user = findUserByOpenid(openid);
+        if (user != null && StringUtils.hasText(user.getUsername())) {
+            return buildTextReply(
+                    openid,
+                    toUserName,
+                    "您的微信已绑定网站账号：" + user.getUsername() + "。如需更换账号请联系管理员。");
+        }
+        Map<String, Object> session = new HashMap<>();
+        session.put(FLOW_KEY, FLOW_BIND);
+        session.put(STEP_KEY, STEP_BIND_IDENTIFIER);
+        session.put(DATA_KEY, new HashMap<String, Object>());
+        saveSession(openid, session);
+        return buildTextReply(
+                openid,
+                toUserName,
+                "已进入账号绑定流程。\n第1步：请输入网站用户名或手机号。");
+    }
+
+    private String handleBindText(String openid, String toUserName, String input, Map<String, Object> session) {
+        String step = String.valueOf(session.get(STEP_KEY));
+        Map<String, Object> data = getData(session);
+        switch (step) {
+            case STEP_BIND_IDENTIFIER -> {
+                if (!StringUtils.hasText(input)) {
+                    return buildTextReply(openid, toUserName, "用户名或手机号不能为空，请重新输入。");
+                }
+                data.put("identifier", input.trim());
+                session.put(STEP_KEY, STEP_BIND_PASSWORD);
+                saveSession(openid, session);
+                return buildTextReply(openid, toUserName, "第2步：请输入网站登录密码。");
+            }
+            case STEP_BIND_PASSWORD -> {
+                String identifier = (String) data.get("identifier");
+                clearSession(openid);
+                return bindWechatAccount(openid, toUserName, identifier, input);
+            }
+            default -> {
+                clearSession(openid);
+                return buildTextReply(openid, toUserName, "绑定流程状态异常，已重置。请重新发送【绑定】。");
+            }
+        }
+    }
+
+    private String bindWechatAccount(String openid, String toUserName, String identifier, String password) {
+        if (!StringUtils.hasText(identifier)) {
+            return buildTextReply(openid, toUserName, "绑定信息已失效，请重新发送【绑定】。");
+        }
+        if (!StringUtils.hasText(password)) {
+            return buildTextReply(openid, toUserName, "密码不能为空，请重新发送【绑定】。");
+        }
+
+        User account = findAccountByIdentifier(identifier.trim());
+        if (account == null) {
+            return buildTextReply(openid, toUserName, "未找到该网站账号，请确认用户名或手机号后重试。");
+        }
+        if (!StringUtils.hasText(account.getPasswordHash())
+                || !passwordEncoder.matches(password, account.getPasswordHash())) {
+            return buildTextReply(openid, toUserName, "密码错误，请重新发送【绑定】。");
+        }
+        if (StringUtils.hasText(account.getWxOpenid()) && !openid.equals(account.getWxOpenid())) {
+            return buildTextReply(openid, toUserName, "该网站账号已绑定其他微信号。");
+        }
+        if (openid.equals(account.getWxOpenid())) {
+            return buildTextReply(openid, toUserName, "您的微信已绑定网站账号：" + account.getUsername() + "。");
+        }
+
+        User wxUser = findUserByOpenid(openid);
+        userMapper.updateById(User.builder().id(account.getId()).wxOpenid(openid).build());
+        if (wxUser != null && !wxUser.getId().equals(account.getId()) && isWechatShellUser(wxUser)) {
+            userMapper.deleteById(wxUser.getId());
+        }
+
+        String accountName = StringUtils.hasText(account.getUsername()) ? account.getUsername() : account.getPhone();
+        return buildTextReply(
+                openid,
+                toUserName,
+                "绑定成功！已关联网站账号：" + accountName + "。\n现在可使用【我的匹配】【我的帖子】等功能。");
+    }
+
+    private User findAccountByIdentifier(String identifier) {
+        return userMapper.selectOne(new LambdaQueryWrapper<User>()
+                .eq(User::getUsername, identifier)
+                .or()
+                .eq(User::getPhone, identifier)
+                .last("LIMIT 1"));
+    }
+
+    private boolean isWechatShellUser(User user) {
+        return user != null && !StringUtils.hasText(user.getUsername()) && !StringUtils.hasText(user.getPhone());
+    }
+
+    private String shellUserHint() {
+        return "您尚未绑定网站账号。请发送【绑定】，输入在网站注册的用户名/手机号与密码，即可查看您在网站上的帖子和匹配记录。";
     }
 
     private String handleQuery(String openid, String toUserName) {
         User user = findUserByOpenid(openid);
         if (user == null) {
-            return buildTextReply(openid, toUserName, "未找到您的账号，请先在网站注册并关联微信");
+            return buildTextReply(openid, toUserName, shellUserHint());
+        }
+        if (isWechatShellUser(user)) {
+            return buildTextReply(openid, toUserName, shellUserHint());
         }
 
         List<ItemPost> openPosts = itemPostMapper.selectList(new LambdaQueryWrapper<ItemPost>()
@@ -246,7 +366,10 @@ public class WxServiceImpl implements WxService {
     private String handleMyPosts(String openid, String toUserName) {
         User user = findUserByOpenid(openid);
         if (user == null) {
-            return buildTextReply(openid, toUserName, "未找到您的账号，请先在网站注册并关联微信");
+            return buildTextReply(openid, toUserName, shellUserHint());
+        }
+        if (isWechatShellUser(user)) {
+            return buildTextReply(openid, toUserName, shellUserHint());
         }
 
         List<ItemPost> posts = itemPostMapper.selectList(new LambdaQueryWrapper<ItemPost>()
@@ -302,9 +425,10 @@ public class WxServiceImpl implements WxService {
 
     private String defaultGuideText() {
         return "您好！支持以下指令：\n"
-                + "【查询】查看您的最新匹配结果\n"
+                + "【绑定】关联您在网站注册的账号\n"
+                + "【我的匹配】查看您的最新匹配结果\n"
                 + "【我的帖子】查看您发布的帖子\n"
-                + "【查找】按关键词/区域/时间查相似帖子\n"
+                + "【全站找帖】按关键词/区域/时间查相似帖子\n"
                 + "【发布】管理员快速发布帖子\n\n"
                 + "多轮操作中可发送【取消】退出。\n"
                 + "如需更多功能，请访问网站";
@@ -312,10 +436,10 @@ public class WxServiceImpl implements WxService {
 
     private String startAdminPublish(String openid, String toUserName) {
         User user = findUserByOpenid(openid);
-        if (user == null) {
-            return buildTextReply(openid, toUserName, "未找到您的账号，请先在网站注册并关联微信。");
+        if (user == null || isWechatShellUser(user)) {
+            return buildTextReply(openid, toUserName, shellUserHint());
         }
-        if (user.getRole() != UserRole.ADMIN) {
+        if (user.getRole() == null || !user.getRole().canAccessAdminPanel()) {
             return buildTextReply(openid, toUserName, "仅管理员可使用公众号快速发布功能。");
         }
         Map<String, Object> session = new HashMap<>();
@@ -468,7 +592,7 @@ public class WxServiceImpl implements WxService {
 
     private String publishAdminPost(String openid, String toUserName, Map<String, Object> data) {
         User admin = findUserByOpenid(openid);
-        if (admin == null || admin.getRole() != UserRole.ADMIN) {
+        if (admin == null || admin.getRole() == null || !admin.getRole().canAccessAdminPanel()) {
             clearSession(openid);
             return buildTextReply(openid, toUserName, "管理员身份验证失败，流程已取消。");
         }
@@ -495,7 +619,7 @@ public class WxServiceImpl implements WxService {
         session.put(STEP_KEY, STEP_SEARCH_KEYWORDS);
         session.put(DATA_KEY, new HashMap<String, Object>());
         saveSession(openid, session);
-        return buildTextReply(openid, toUserName, "已进入智能查找。\n第1步：请输入关键词（多个用空格或逗号分隔）。");
+        return buildTextReply(openid, toUserName, "已进入全站找帖。\n第1步：请输入关键词（多个用空格或逗号分隔）。");
     }
 
     private String handleSearchText(String openid, String toUserName, String input, Map<String, Object> session) {
@@ -518,14 +642,17 @@ public class WxServiceImpl implements WxService {
                 }
                 session.put(STEP_KEY, STEP_SEARCH_TIME);
                 saveSession(openid, session);
-                return buildTextReply(openid, toUserName, "第3步：请输入时间（yyyy-MM-dd 或 yyyy-MM-dd HH:mm），或发送【跳过】。");
+                return buildTextReply(openid, toUserName, "第3步：请输入时间（yyyy-MM-dd、yyyy-MM-dd HH:mm 或 yyyy-MM-dd HH:mm:ss），或发送【跳过】。");
             }
             case STEP_SEARCH_TIME -> {
                 LocalDateTime targetTime = null;
                 if (!"跳过".equals(input)) {
                     targetTime = parseDateOrDateTime(input);
                     if (targetTime == null) {
-                        return buildTextReply(openid, toUserName, "时间格式无效，请输入 yyyy-MM-dd 或 yyyy-MM-dd HH:mm，或发送【跳过】。");
+                        return buildTextReply(
+                                openid,
+                                toUserName,
+                                "时间格式无效，请输入 yyyy-MM-dd、yyyy-MM-dd HH:mm 或 yyyy-MM-dd HH:mm:ss，或发送【跳过】。");
                     }
                     data.put("targetTime", targetTime.toString());
                 }
@@ -535,7 +662,7 @@ public class WxServiceImpl implements WxService {
             }
             default -> {
                 clearSession(openid);
-                return buildTextReply(openid, toUserName, "查找流程状态异常，已重置。请重新发送【查找】。");
+                return buildTextReply(openid, toUserName, "全站找帖流程状态异常，已重置。请重新发送【全站找帖】。");
             }
         }
     }
@@ -553,7 +680,7 @@ public class WxServiceImpl implements WxService {
 
         List<ItemPost> openPosts = itemPostMapper.selectList(
                 new LambdaQueryWrapper<ItemPost>()
-                        .eq(ItemPost::getStatus, PostStatus.OPEN)
+                        .in(ItemPost::getStatus, PostStatus.OPEN, PostStatus.MATCHED)
                         .orderByDesc(ItemPost::getCreatedAt)
                         .last("LIMIT 200"));
 
@@ -570,22 +697,22 @@ public class WxServiceImpl implements WxService {
     }
 
     private Score calculateSearchScore(ItemPost post, List<String> keywords, String areaCode, LocalDateTime targetTime) {
-        String title = String.valueOf(post.getTitle() == null ? "" : post.getTitle()).toLowerCase();
-        String desc = String.valueOf(post.getDescription() == null ? "" : post.getDescription()).toLowerCase();
+        String title = String.valueOf(post.getTitle() == null ? "" : post.getTitle());
+        String desc = String.valueOf(post.getDescription() == null ? "" : post.getDescription());
+        String areaText = String.valueOf(post.getAreaText() == null ? "" : post.getAreaText());
         List<String> tagKeywords = itemKeywordMapper
                 .selectList(new LambdaQueryWrapper<ItemKeyword>().eq(ItemKeyword::getPostId, post.getId()))
                 .stream()
                 .map(ItemKeyword::getKeyword)
                 .filter(StringUtils::hasText)
-                .map(keyword -> keyword.toLowerCase())
                 .toList();
 
         int hits = 0;
         for (String keyword : keywords) {
-            String lower = keyword.toLowerCase();
-            boolean matched = title.contains(lower)
-                    || desc.contains(lower)
-                    || tagKeywords.stream().anyMatch(tag -> tag.contains(lower));
+            boolean matched = keywordMatches(title, keyword)
+                    || keywordMatches(desc, keyword)
+                    || keywordMatches(areaText, keyword)
+                    || tagKeywords.stream().anyMatch(tag -> keywordMatches(tag, keyword));
             if (matched) {
                 hits++;
             }
@@ -598,10 +725,12 @@ public class WxServiceImpl implements WxService {
         }
 
         BigDecimal areaScore = BigDecimal.ZERO;
-        if (StringUtils.hasText(areaCode)
-                && StringUtils.hasText(post.getAreaCode())
-                && areaCode.equalsIgnoreCase(post.getAreaCode())) {
-            areaScore = BigDecimal.valueOf(0.20D);
+        if (StringUtils.hasText(areaCode)) {
+            if (StringUtils.hasText(post.getAreaCode()) && areaCodesMatch(areaCode, post.getAreaCode())) {
+                areaScore = BigDecimal.valueOf(0.20D);
+            } else if (StringUtils.hasText(post.getAreaText()) && keywordMatches(post.getAreaText(), areaCode)) {
+                areaScore = BigDecimal.valueOf(0.15D);
+            }
         }
 
         BigDecimal timeScore = BigDecimal.ZERO;
@@ -614,6 +743,39 @@ public class WxServiceImpl implements WxService {
             }
         }
         return new Score(keywordScore.add(areaScore).add(timeScore).setScale(4, RoundingMode.HALF_UP));
+    }
+
+    private boolean keywordMatches(String source, String keyword) {
+        if (!StringUtils.hasText(source) || !StringUtils.hasText(keyword)) {
+            return false;
+        }
+        String lowerKeyword = keyword.trim().toLowerCase();
+        String lowerSource = source.trim().toLowerCase();
+        return lowerSource.contains(lowerKeyword) || lowerKeyword.contains(lowerSource);
+    }
+
+    private boolean areaCodesMatch(String left, String right) {
+        String normalizedLeft = normalizeAreaCode(left);
+        String normalizedRight = normalizeAreaCode(right);
+        if (!StringUtils.hasText(normalizedLeft) || !StringUtils.hasText(normalizedRight)) {
+            return false;
+        }
+        if (normalizedLeft.equalsIgnoreCase(normalizedRight)) {
+            return true;
+        }
+        return normalizeAreaDigits(normalizedLeft).equalsIgnoreCase(normalizeAreaDigits(normalizedRight));
+    }
+
+    private String normalizeAreaCode(String areaCode) {
+        return areaCode.trim().toUpperCase().replaceAll("[^A-Z0-9]", "");
+    }
+
+    private String normalizeAreaDigits(String areaCode) {
+        Matcher matcher = AREA_CODE_PATTERN.matcher(areaCode);
+        if (matcher.matches()) {
+            return matcher.group(1) + matcher.group(3);
+        }
+        return areaCode;
     }
 
     private String formatSearchReply(List<SearchResult> results) {
@@ -638,7 +800,7 @@ public class WxServiceImpl implements WxService {
                     .append(post.getId())
                     .append("\n");
         }
-        sb.append("如需继续查找，可再次发送【查找】。");
+        sb.append("如需继续找帖，可再次发送【全站找帖】。");
         return sb.toString();
     }
 
@@ -723,6 +885,11 @@ public class WxServiceImpl implements WxService {
     private LocalDateTime parseDateOrDateTime(String input) {
         String normalized = input.trim();
         try {
+            return LocalDateTime.parse(normalized, DATETIME_SECONDS_FORMATTER);
+        } catch (DateTimeParseException ignored) {
+            // continue
+        }
+        try {
             return LocalDateTime.parse(normalized, DATETIME_FORMATTER);
         } catch (DateTimeParseException ex) {
             try {
@@ -761,9 +928,11 @@ public class WxServiceImpl implements WxService {
             return Collections.emptyList();
         }
         return list.stream()
-                .filter(String.class::isInstance)
-                .map(String.class::cast)
+                .filter(Objects::nonNull)
+                .map(item -> item instanceof String text ? text : String.valueOf(item))
+                .map(String::trim)
                 .filter(StringUtils::hasText)
+                .distinct()
                 .toList();
     }
 

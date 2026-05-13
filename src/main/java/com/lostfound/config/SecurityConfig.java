@@ -44,7 +44,7 @@ public class SecurityConfig {
                         .requestMatchers("/api/wx/**")
                         .permitAll()
                         .requestMatchers("/api/admin/**")
-                        .hasRole("ADMIN")
+                        .hasAnyRole("ADMIN", "SUPER_ADMIN")
                         .anyRequest()
                         .authenticated())
                 .addFilterBefore(jwtAuthFilter, UsernamePasswordAuthenticationFilter.class);

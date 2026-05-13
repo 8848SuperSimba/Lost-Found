@@ -5,6 +5,7 @@ import com.lostfound.common.Result;
 import com.lostfound.common.ResultCode;
 import com.lostfound.dto.ChangePasswordRequest;
 import com.lostfound.dto.UpdateUserRequest;
+import com.lostfound.enums.UserRole;
 import com.lostfound.enums.UserStatus;
 import com.lostfound.exception.BusinessException;
 import com.lostfound.service.UserService;
@@ -72,6 +73,25 @@ public class UserController {
         }
 
         userService.adminUpdateUserStatus(getCurrentUserId(), id, status);
+        return Result.success();
+    }
+
+    @PutMapping("/api/admin/users/{id}/role")
+    public Result<Void> superAdminUpdateUserRole(@PathVariable("id") Long id, @RequestBody Map<String, String> request) {
+        String roleValue = request.get("role");
+        if (roleValue == null) {
+            throw new BusinessException(ResultCode.BAD_REQUEST, "role 不能为空");
+        }
+        UserRole role;
+        try {
+            role = UserRole.valueOf(roleValue.toUpperCase());
+        } catch (IllegalArgumentException ex) {
+            throw new BusinessException(ResultCode.BAD_REQUEST, "role 仅支持 USER 或 ADMIN");
+        }
+        if (role == UserRole.SUPER_ADMIN) {
+            throw new BusinessException(ResultCode.BAD_REQUEST, "不支持通过该接口设置 SUPER_ADMIN");
+        }
+        userService.superAdminUpdateUserRole(getCurrentUserId(), id, role);
         return Result.success();
     }
 

@@ -10,6 +10,10 @@ import { toDateTimeParam } from '../../utils/format'
 const router = useRouter()
 const loading = ref(false)
 
+const patchForm = (patch) => {
+  Object.assign(form, patch)
+}
+
 const form = reactive({
   postType: 'LOST',
   title: '',
@@ -68,7 +72,7 @@ const submit = async () => {
   <div class="page-container">
     <div class="card-block">
       <h2 class="page-title">发布失物/寻物信息</h2>
-      <PostForm v-model="form" />
+      <PostForm :model-value="form" @update:model-value="patchForm" />
       <el-button type="primary" :loading="loading" @click="submit">提交发布</el-button>
     </div>
   </div>

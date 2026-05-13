@@ -15,11 +15,7 @@ export const resolvePost = (id) => http.put(`/posts/${id}/resolve`)
 export const uploadImage = (file) => {
   const formData = new FormData()
   formData.append('file', file)
-  return http.post('/upload/image', formData, {
-    headers: {
-      'Content-Type': 'multipart/form-data',
-    },
-  })
+  return http.post('/upload/image', formData)
 }
 
 export const listAdminPosts = (params) => http.get('/admin/posts', { params })

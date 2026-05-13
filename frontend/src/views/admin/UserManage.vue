@@ -1,13 +1,15 @@
 <script setup>
 import { onMounted, reactive, ref } from 'vue'
 import { ElMessage } from 'element-plus'
-import { getAdminUsers, updateUserStatus } from '../../api/user'
+import { getAdminUsers, updateUserRole, updateUserStatus } from '../../api/user'
 import { formatDateTime } from '../../utils/format'
+import { useAuthStore } from '../../stores/auth'
 
 const loading = ref(false)
 const users = ref([])
 const pager = reactive({ page: 1, size: 10, total: 0 })
 const query = reactive({ keyword: '', status: '' })
+const authStore = useAuthStore()
 
 const fetchData = async () => {
   loading.value = true
@@ -30,6 +32,19 @@ const toggleStatus = async (row) => {
   await updateUserStatus(row.id, status)
   ElMessage.success(status === 'BANNED' ? '已封禁' : '已解封')
   await fetchData()
+}
+
+const toggleRole = async (row) => {
+  const role = row.role === 'ADMIN' ? 'USER' : 'ADMIN'
+  await updateUserRole(row.id, role)
+  ElMessage.success(role === 'ADMIN' ? '已设为普通管理员' : '已降为普通用户')
+  await fetchData()
+}
+
+const canToggleRole = (row) => {
+  if (!authStore.isSuperAdmin) return false
+  if (!row || row.role === 'SUPER_ADMIN') return false
+  return row.id !== authStore.user?.id
 }
 
 onMounted(fetchData)
@@ -57,7 +72,7 @@ onMounted(fetchData)
         <el-table-column label="用户名" prop="username" width="140" />
         <el-table-column label="昵称" prop="nickname" width="140" />
         <el-table-column label="手机号" prop="phone" width="140" />
-        <el-table-column label="角色" prop="role" width="110" />
+        <el-table-column label="角色" prop="role" width="130" />
         <el-table-column label="状态" width="110">
           <template #default="{ row }">
             <el-tag :type="row.status === 'ACTIVE' ? 'success' : 'danger'">{{ row.status }}</el-tag>
@@ -66,9 +81,12 @@ onMounted(fetchData)
         <el-table-column label="注册时间" width="180">
           <template #default="{ row }">{{ formatDateTime(row.createdAt) }}</template>
         </el-table-column>
-        <el-table-column label="操作" width="120">
+        <el-table-column label="操作" width="240">
           <template #default="{ row }">
             <el-button type="primary" text @click="toggleStatus(row)">{{ row.status === 'ACTIVE' ? '封禁' : '解封' }}</el-button>
+            <el-button v-if="canToggleRole(row)" type="warning" text @click="toggleRole(row)">
+              {{ row.role === 'ADMIN' ? '降为用户' : '设为管理员' }}
+            </el-button>
           </template>
         </el-table-column>
       </el-table>

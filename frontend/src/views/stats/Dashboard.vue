@@ -28,6 +28,15 @@ let categoryChart = null
 let areaChart = null
 let trendChart = null
 
+const disposeCharts = () => {
+  categoryChart?.dispose()
+  areaChart?.dispose()
+  trendChart?.dispose()
+  categoryChart = null
+  areaChart = null
+  trendChart = null
+}
+
 const fetchOverview = async () => {
   loading.overview = true
   try {
@@ -38,6 +47,8 @@ const fetchOverview = async () => {
 }
 
 const fetchCharts = async () => {
+  // 切换筛选时骨架屏会重建 DOM，旧实例指向已卸载节点；先销毁再拉数
+  disposeCharts()
   loading.category = true
   loading.area = true
   loading.trend = true
@@ -50,15 +61,16 @@ const fetchCharts = async () => {
     categoryList.value = category
     areaList.value = area
     trendList.value = trend
-    await nextTick()
-    renderCharts()
   } catch (e) {
     ElMessage.error('统计数据加载失败，请刷新重试')
   } finally {
+    // 须先结束骨架屏，图表容器才会挂载；否则 ref 为空，echarts 无法初始化
     loading.category = false
     loading.area = false
     loading.trend = false
   }
+  await nextTick()
+  renderCharts()
 }
 
 const renderCharts = () => {
@@ -96,19 +108,23 @@ const renderCharts = () => {
   }
 }
 
+const resizeCharts = () => {
+  categoryChart?.resize()
+  areaChart?.resize()
+  trendChart?.resize()
+}
+
 watch(() => [filter.days, filter.postType], fetchCharts)
 
 onMounted(async () => {
   await fetchOverview()
   await fetchCharts()
-  window.addEventListener('resize', renderCharts)
+  window.addEventListener('resize', resizeCharts)
 })
 
 onBeforeUnmount(() => {
-  window.removeEventListener('resize', renderCharts)
-  categoryChart?.dispose()
-  areaChart?.dispose()
-  trendChart?.dispose()
+  window.removeEventListener('resize', resizeCharts)
+  disposeCharts()
 })
 </script>
 

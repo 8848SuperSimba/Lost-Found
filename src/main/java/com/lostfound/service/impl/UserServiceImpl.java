@@ -16,6 +16,7 @@ import com.lostfound.exception.BusinessException;
 import com.lostfound.mapper.UserMapper;
 import com.lostfound.service.UserService;
 import com.lostfound.util.JwtUtil;
+import com.lostfound.util.PublicUrlResolver;
 import com.lostfound.vo.UserVO;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -43,6 +44,7 @@ public class UserServiceImpl implements UserService {
     private final JwtUtil jwtUtil;
     private final JdbcTemplate jdbcTemplate;
     private final ObjectMapper objectMapper;
+    private final PublicUrlResolver publicUrlResolver;
 
     @Value("${wx.appid}")
     private String wxAppid;
@@ -55,12 +57,14 @@ public class UserServiceImpl implements UserService {
             PasswordEncoder passwordEncoder,
             JwtUtil jwtUtil,
             JdbcTemplate jdbcTemplate,
-            ObjectMapper objectMapper) {
+            ObjectMapper objectMapper,
+            PublicUrlResolver publicUrlResolver) {
         this.userMapper = userMapper;
         this.passwordEncoder = passwordEncoder;
         this.jwtUtil = jwtUtil;
         this.jdbcTemplate = jdbcTemplate;
         this.objectMapper = objectMapper;
+        this.publicUrlResolver = publicUrlResolver;
     }
 
     @Override
@@ -224,9 +228,16 @@ public class UserServiceImpl implements UserService {
 
     @Override
     public void adminUpdateUserStatus(Long adminUserId, Long targetUserId, UserStatus status) {
+        User operator = userMapper.selectById(adminUserId);
+        if (operator == null || operator.getRole() == null || !operator.getRole().canAccessAdminPanel()) {
+            throw new BusinessException(ResultCode.FORBIDDEN, "无权限执行该操作");
+        }
         User targetUser = userMapper.selectById(targetUserId);
         if (targetUser == null) {
             throw new BusinessException(ResultCode.USER_NOT_FOUND);
+        }
+        if (targetUser.getRole() == UserRole.SUPER_ADMIN) {
+            throw new BusinessException(ResultCode.FORBIDDEN, "不允许修改初始管理员状态");
         }
 
         User updateUser = User.builder().id(targetUserId).status(status).build();
@@ -243,6 +254,38 @@ public class UserServiceImpl implements UserService {
                 detail);
     }
 
+    @Override
+    public void superAdminUpdateUserRole(Long operatorUserId, Long targetUserId, UserRole role) {
+        User operator = userMapper.selectById(operatorUserId);
+        if (operator == null || operator.getRole() == null || !operator.getRole().canGrantAdminRole()) {
+            throw new BusinessException(ResultCode.FORBIDDEN, "仅初始管理员可调整用户角色");
+        }
+        User targetUser = userMapper.selectById(targetUserId);
+        if (targetUser == null) {
+            throw new BusinessException(ResultCode.USER_NOT_FOUND);
+        }
+        if (targetUser.getRole() == UserRole.SUPER_ADMIN) {
+            throw new BusinessException(ResultCode.BAD_REQUEST, "不允许修改初始管理员角色");
+        }
+        if (targetUserId.equals(operatorUserId)) {
+            throw new BusinessException(ResultCode.BAD_REQUEST, "不允许修改自己的角色");
+        }
+        if (targetUser.getRole() == role) {
+            return;
+        }
+        userMapper.updateById(User.builder().id(targetUserId).role(role).build());
+
+        String action = role == UserRole.ADMIN ? "GRANT_ADMIN" : "REVOKE_ADMIN";
+        String detail = "将用户角色更新为 " + role.name();
+        jdbcTemplate.update(
+                "INSERT INTO audit_log (admin_user_id, action, target_type, target_id, detail) VALUES (?, ?, ?, ?, ?)",
+                operatorUserId,
+                action,
+                "USER",
+                targetUserId,
+                detail);
+    }
+
     private UserVO toUserVO(User user) {
         return UserVO.builder()
                 .id(user.getId())
@@ -250,7 +293,10 @@ public class UserServiceImpl implements UserService {
                 .phone(user.getPhone())
                 .email(user.getEmail())
                 .nickname(user.getNickname())
-                .avatarUrl(user.getAvatarUrl())
+                .avatarUrl(
+                        StringUtils.hasText(user.getAvatarUrl())
+                                ? publicUrlResolver.resolveUploadUrl(user.getAvatarUrl())
+                                : null)
                 .wxOpenid(user.getWxOpenid())
                 .role(user.getRole())
                 .status(user.getStatus())

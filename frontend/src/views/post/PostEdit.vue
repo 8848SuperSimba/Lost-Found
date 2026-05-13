@@ -11,6 +11,10 @@ const router = useRouter()
 const loading = ref(false)
 const existingImageUrls = ref([])
 
+const patchForm = (patch) => {
+  Object.assign(form, patch)
+}
+
 const form = reactive({
   title: '',
   category: '',
@@ -44,18 +48,7 @@ const submit = async () => {
   loading.value = true
   try {
     const files = (form.localImages || []).map((item) => item.raw).filter(Boolean)
-    let imageUrls
-    if (files.length > 0) {
-      // 用户选择了新图片，上传并替换
-      imageUrls = []
-      for (const file of files) {
-        imageUrls.push(await uploadImage(file))
-      }
-    } else {
-      // 用户未选新图片，沿用原有图片（null 表示不更新该字段）
-      imageUrls = existingImageUrls.value.length > 0 ? existingImageUrls.value : null
-    }
-    await updatePost(route.params.id, {
+    const payload = {
       title: form.title || null,
       category: form.category || null,
       description: form.description || null,
@@ -66,8 +59,15 @@ const submit = async () => {
       contactInfo: form.contactInfo || null,
       reward: form.reward || null,
       keywords: form.keywords,
-      imageUrls,
-    })
+    }
+    if (files.length > 0) {
+      const imageUrls = []
+      for (const file of files) {
+        imageUrls.push(await uploadImage(file))
+      }
+      payload.imageUrls = imageUrls
+    }
+    await updatePost(route.params.id, payload)
     ElMessage.success('更新成功')
     await router.push(`/posts/${route.params.id}`)
   } finally {
@@ -98,7 +98,7 @@ onMounted(loadDetail)
           如需更换图片，请在下方重新上传（上传后将替换全部现有图片）
         </div>
       </div>
-      <PostForm v-model="form" :include-post-type="false" />
+      <PostForm :model-value="form" :include-post-type="false" @update:model-value="patchForm" />
       <el-button type="primary" :loading="loading" @click="submit">保存修改</el-button>
     </div>
   </div>

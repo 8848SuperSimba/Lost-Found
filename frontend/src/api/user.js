@@ -9,3 +9,5 @@ export const changePassword = (payload) => http.put('/user/change-password', pay
 export const getAdminUsers = (params) => http.get('/admin/users', { params })
 
 export const updateUserStatus = (id, status) => http.put(`/admin/users/${id}/ban`, { status })
+
+export const updateUserRole = (id, role) => http.put(`/admin/users/${id}/role`, { role })
