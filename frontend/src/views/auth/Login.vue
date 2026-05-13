@@ -89,14 +89,7 @@ onMounted(handleWxCallback)
         </el-form-item>
         <el-button type="primary" :loading="loading" style="width: 100%" @click="onSubmit">登录</el-button>
         <el-divider />
-        <el-button
-          :loading="wxLoading"
-          style="width: 100%"
-          @click="onWxLogin"
-          :disabled="!wxAppid"
-        >
-          微信授权登录
-        </el-button>
+        <el-button :loading="wxLoading" style="width: 100%" @click="onWxLogin">微信授权登录</el-button>
         <p style="margin-top: 8px; color: #909399; font-size: 12px">
           {{ isWechatBrowser ? '检测到微信环境，可直接授权登录。' : '建议在微信内打开以完成授权登录。' }}
         </p>

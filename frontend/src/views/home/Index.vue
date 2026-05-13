@@ -7,6 +7,9 @@ import { formatDateTime } from '../../utils/format'
 const router = useRouter()
 const latestPosts = ref([])
 const keyword = ref('')
+const qrcodeFailed = ref(false)
+/** 站点根路径下的公众号二维码（文件名 wechat-qrcode.png） */
+const qrcodeSrc = '/' + 'wechat-qrcode.png'
 
 const goSearch = async () => {
   const query = keyword.value.trim()
@@ -25,7 +28,7 @@ onMounted(async () => {
 <template>
   <div class="page-container">
     <div class="card-block">
-      <h2 class="page-title">校园失物招领智能匹配系统</h2>
+      <h2 class="page-title">BISTU失物招领处</h2>
       <p>快速发布失物/寻物信息，自动匹配并发起联系。</p>
       <div class="toolbar" style="margin-top: 12px">
         <el-input v-model="keyword" placeholder="请输入关键词（如 黑色双肩包 / AirPods）" clearable @keyup.enter="goSearch" />
@@ -50,27 +53,42 @@ onMounted(async () => {
     <div class="card-block" style="text-align: center; padding: 24px">
       <h3 style="margin-top: 0">关注公众号，随时查询匹配结果</h3>
       <p style="color: #606266">
-        微信扫描下方二维码关注「校园失物招领」公众号，<br />
+        微信扫描下方二维码关注公众号，<br />
         发送「查询」即可查看您最新的匹配结果，发送「我的帖子」查看帖子状态。
       </p>
-      <div
-        style="
-          width: 160px;
-          height: 160px;
-          margin: 0 auto;
-          background: #f5f7fa;
-          border: 1px dashed #dcdfe6;
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          border-radius: 8px;
-          color: #909399;
-          font-size: 13px;
-        "
-      >
-        测试号二维码<br />（请替换为实际二维码图片）
+      <div style="margin: 0 auto; width: 200px">
+        <img
+          v-show="!qrcodeFailed"
+          :src="qrcodeSrc"
+          alt="公众号二维码"
+          width="200"
+          height="200"
+          style="display: block; border-radius: 8px; border: 1px solid #ebeef5; object-fit: contain; background: #fff"
+          @error="qrcodeFailed = true"
+        />
+        <div
+          v-if="qrcodeFailed"
+          style="
+            width: 200px;
+            height: 200px;
+            margin: 0 auto;
+            background: #f5f7fa;
+            border: 1px dashed #dcdfe6;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            border-radius: 8px;
+            color: #909399;
+            font-size: 13px;
+            text-align: center;
+            padding: 12px;
+            box-sizing: border-box;
+          "
+        >
+          二维码暂无法显示<br />
+          可在微信中搜索「BISTU失物招领处」关注公众号
+        </div>
       </div>
-      <p style="color: #909399; font-size: 12px; margin-top: 8px">注：请替换为正式公众号二维码后再对外发布。</p>
     </div>
   </div>
 </template>

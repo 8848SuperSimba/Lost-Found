@@ -58,7 +58,7 @@ onBeforeUnmount(() => {
       <div style="display: flex; align-items: center; justify-content: space-between; height: 100%">
         <el-space :size="18" wrap>
           <div style="font-size: 18px; font-weight: 700; cursor: pointer" @click="router.push('/home')">
-            校园失物招领系统
+            BISTU失物招领处
           </div>
           <el-link
             v-for="item in menuItems"

@@ -88,7 +88,7 @@ public class WxServiceImpl implements WxService {
                     .build();
             userMapper.insert(newUser);
         }
-        String welcomeText = "欢迎关注校园失物招领系统！\n\n支持以下指令：\n"
+        String welcomeText = "欢迎关注BISTU失物招领处！\n\n支持以下指令：\n"
                 + "【查询】查看您的最新匹配结果\n"
                 + "【我的帖子】查看您发布的帖子";
         return buildTextReply(openid, toUserName, welcomeText);
