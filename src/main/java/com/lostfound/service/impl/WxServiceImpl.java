@@ -1,6 +1,7 @@
 package com.lostfound.service.impl;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.lostfound.dto.CreatePostRequest;
@@ -11,8 +12,6 @@ import com.lostfound.entity.User;
 import com.lostfound.enums.ItemCategory;
 import com.lostfound.enums.PostStatus;
 import com.lostfound.enums.PostType;
-import com.lostfound.enums.UserRole;
-import com.lostfound.enums.UserStatus;
 import com.lostfound.mapper.ItemKeywordMapper;
 import com.lostfound.mapper.ItemPostMapper;
 import com.lostfound.mapper.MatchResultMapper;
@@ -196,16 +195,6 @@ public class WxServiceImpl implements WxService {
     }
 
     private String handleSubscribe(String openid, String toUserName) {
-        User user = findUserByOpenid(openid);
-        if (user == null) {
-            User newUser = User.builder()
-                    .wxOpenid(openid)
-                    .nickname("微信用户")
-                    .role(UserRole.USER)
-                    .status(UserStatus.ACTIVE)
-                    .build();
-            userMapper.insert(newUser);
-        }
         String welcomeText = "欢迎关注BISTU失物招领处！\n\n支持以下指令：\n"
                 + "【绑定】关联您在网站注册的账号\n"
                 + "【我的匹配】查看您的最新匹配结果\n"
@@ -282,11 +271,21 @@ public class WxServiceImpl implements WxService {
             return buildTextReply(openid, toUserName, "您的微信已绑定网站账号：" + account.getUsername() + "。");
         }
 
-        User wxUser = findUserByOpenid(openid);
-        userMapper.updateById(User.builder().id(account.getId()).wxOpenid(openid).build());
-        if (wxUser != null && !wxUser.getId().equals(account.getId()) && isWechatShellUser(wxUser)) {
-            userMapper.deleteById(wxUser.getId());
+        User existingBinding = findUserByOpenid(openid);
+        if (existingBinding != null && !existingBinding.getId().equals(account.getId())) {
+            if (!isWechatShellUser(existingBinding)) {
+                String boundName = StringUtils.hasText(existingBinding.getUsername())
+                        ? existingBinding.getUsername()
+                        : existingBinding.getPhone();
+                return buildTextReply(openid, toUserName, "该微信号已绑定网站账号：" + boundName + "。如需更换请联系管理员。");
+            }
+            userMapper.update(
+                    null,
+                    new LambdaUpdateWrapper<User>()
+                            .eq(User::getId, existingBinding.getId())
+                            .set(User::getWxOpenid, null));
         }
+        userMapper.updateById(User.builder().id(account.getId()).wxOpenid(openid).build());
 
         String accountName = StringUtils.hasText(account.getUsername()) ? account.getUsername() : account.getPhone();
         return buildTextReply(
