@@ -28,7 +28,7 @@ const loadDetail = async () => {
   loading.value = true
   try {
     detail.value = await getPostDetail(route.params.id)
-    if (authStore.token) {
+    if (authStore.token && (isOwner.value || authStore.isAdmin)) {
       try {
         matches.value = await getMatches(route.params.id)
       } catch (error) {
@@ -122,7 +122,7 @@ onMounted(loadDetail)
           fit="cover"
         />
       </div>
-      <div style="margin-top: 16px" v-if="isOwner">
+      <div style="margin-top: 16px" v-if="isOwner && detail.status !== 'RESOLVED' && detail.status !== 'CLOSED'">
         <el-button type="primary" @click="router.push(`/posts/${detail.id}/edit`)">编辑帖子</el-button>
         <el-button @click="router.push(`/my/posts/${detail.id}/matches`)">查看匹配结果</el-button>
         <el-button type="warning" plain :loading="rematching" @click="handleRematch">重新匹配</el-button>

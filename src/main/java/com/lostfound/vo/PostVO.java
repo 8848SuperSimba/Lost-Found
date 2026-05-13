@@ -16,6 +16,7 @@ public class PostVO {
     private PostType postType;
     private String title;
     private ItemCategory category;
+    private String areaCode;
     private String areaText;
     private LocalDateTime lostFoundTime;
     private LocalDateTime createdAt;

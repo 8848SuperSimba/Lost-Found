@@ -28,6 +28,7 @@ const routes = [
       { path: 'admin/stats', component: () => import('../views/admin/StatsManage.vue'), meta: { requiresAuth: true, adminOnly: true } },
       { path: 'admin/audit-logs', component: () => import('../views/admin/AuditLog.vue'), meta: { requiresAuth: true, adminOnly: true } },
       { path: '403', component: () => import('../views/error/Forbidden.vue') },
+      { path: ':pathMatch(.*)*', redirect: '/posts' },
     ],
   },
 ]
