@@ -1,11 +1,12 @@
 <script setup>
 import { onMounted, reactive, ref, watch } from 'vue'
-import { useRouter } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import { listPosts } from '../../api/post'
 import { CATEGORY_OPTIONS, POST_TYPE_LABEL, POST_TYPE_OPTIONS, STATUS_LABEL } from '../../utils/dict'
 import { formatDateTime, toDateTimeParam } from '../../utils/format'
 
 const router = useRouter()
+const route = useRoute()
 const loading = ref(false)
 const total = ref(0)
 const posts = ref([])
@@ -54,7 +55,24 @@ watch(
   { deep: true },
 )
 
-onMounted(fetchData)
+watch(
+  () => route.query.keyword,
+  (value) => {
+    const keyword = typeof value === 'string' ? value : ''
+    if (keyword !== query.keyword) {
+      query.keyword = keyword
+      query.page = 1
+    }
+  },
+)
+
+onMounted(() => {
+  if (typeof route.query.keyword === 'string') {
+    query.keyword = route.query.keyword
+    return
+  }
+  fetchData()
+})
 </script>
 
 <template>

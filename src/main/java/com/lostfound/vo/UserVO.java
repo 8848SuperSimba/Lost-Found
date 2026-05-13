@@ -16,6 +16,7 @@ public class UserVO {
     private String email;
     private String nickname;
     private String avatarUrl;
+    private String wxOpenid;
     private UserRole role;
     private UserStatus status;
     private LocalDateTime lastLoginAt;

@@ -1,9 +1,20 @@
 <script setup>
 import { onMounted, ref } from 'vue'
+import { useRouter } from 'vue-router'
 import { listPosts } from '../../api/post'
 import { formatDateTime } from '../../utils/format'
 
+const router = useRouter()
 const latestPosts = ref([])
+const keyword = ref('')
+
+const goSearch = async () => {
+  const query = keyword.value.trim()
+  await router.push({
+    path: '/posts',
+    query: query ? { keyword: query } : {},
+  })
+}
 
 onMounted(async () => {
   const page = await listPosts({ page: 1, size: 5 })
@@ -16,6 +27,10 @@ onMounted(async () => {
     <div class="card-block">
       <h2 class="page-title">校园失物招领智能匹配系统</h2>
       <p>快速发布失物/寻物信息，自动匹配并发起联系。</p>
+      <div class="toolbar" style="margin-top: 12px">
+        <el-input v-model="keyword" placeholder="请输入关键词（如 黑色双肩包 / AirPods）" clearable @keyup.enter="goSearch" />
+        <el-button type="primary" @click="goSearch">搜索帖子</el-button>
+      </div>
     </div>
 
     <div class="card-block">
@@ -55,7 +70,7 @@ onMounted(async () => {
       >
         测试号二维码<br />（请替换为实际二维码图片）
       </div>
-      <p style="color: #909399; font-size: 12px; margin-top: 8px">注：当前使用微信公众号测试号，需扫码申请关注权限</p>
+      <p style="color: #909399; font-size: 12px; margin-top: 8px">注：请替换为正式公众号二维码后再对外发布。</p>
     </div>
   </div>
 </template>

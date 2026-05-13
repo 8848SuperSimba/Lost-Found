@@ -49,11 +49,20 @@ onMounted(fetchData)
       </div>
       <el-table :data="users" v-loading="loading">
         <el-table-column label="ID" prop="id" width="90" />
+        <el-table-column label="头像" width="80">
+          <template #default="{ row }">
+            <el-avatar :src="row.avatarUrl">{{ row.nickname?.slice(0, 1) || row.username?.slice(0, 1) || 'U' }}</el-avatar>
+          </template>
+        </el-table-column>
         <el-table-column label="用户名" prop="username" width="140" />
         <el-table-column label="昵称" prop="nickname" width="140" />
         <el-table-column label="手机号" prop="phone" width="140" />
         <el-table-column label="角色" prop="role" width="110" />
-        <el-table-column label="状态" prop="status" width="110" />
+        <el-table-column label="状态" width="110">
+          <template #default="{ row }">
+            <el-tag :type="row.status === 'ACTIVE' ? 'success' : 'danger'">{{ row.status }}</el-tag>
+          </template>
+        </el-table-column>
         <el-table-column label="注册时间" width="180">
           <template #default="{ row }">{{ formatDateTime(row.createdAt) }}</template>
         </el-table-column>

@@ -9,7 +9,7 @@ const routes = [
     path: '/',
     component: MainLayout,
     children: [
-      { path: '', redirect: '/posts' },
+      { path: '', redirect: '/home' },
       { path: 'home', component: () => import('../views/home/Index.vue') },
       { path: 'profile', component: () => import('../views/user/Profile.vue'), meta: { requiresAuth: true } },
       { path: 'posts', component: () => import('../views/post/PostList.vue') },

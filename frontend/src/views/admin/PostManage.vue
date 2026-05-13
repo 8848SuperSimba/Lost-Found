@@ -1,9 +1,11 @@
 <script setup>
 import { onMounted, reactive, ref } from 'vue'
+import { useRouter } from 'vue-router'
 import { ElMessageBox } from 'element-plus'
 import { closeAdminPost, listAdminPosts } from '../../api/post'
 import { formatDateTime } from '../../utils/format'
 
+const router = useRouter()
 const loading = ref(false)
 const rows = ref([])
 const pager = reactive({ page: 1, size: 10, total: 0 })
@@ -65,6 +67,7 @@ onMounted(fetchData)
         </el-table-column>
         <el-table-column label="操作" width="140">
           <template #default="{ row }">
+            <el-button text type="primary" @click="router.push(`/posts/${row.id}`)">查看</el-button>
             <el-button text type="danger" @click="closePost(row)">关闭</el-button>
           </template>
         </el-table-column>

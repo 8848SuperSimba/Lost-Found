@@ -3,7 +3,7 @@ import { computed, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { getPostDetail } from '../../api/post'
-import { getMatches } from '../../api/match'
+import { getMatches, rematch } from '../../api/match'
 import { createThread } from '../../api/thread'
 import { useAuthStore } from '../../stores/auth'
 import { CATEGORY_LABEL, POST_TYPE_LABEL, STATUS_LABEL } from '../../utils/dict'
@@ -14,6 +14,7 @@ const router = useRouter()
 const authStore = useAuthStore()
 const detail = ref(null)
 const loading = ref(false)
+const rematching = ref(false)
 const matches = ref([])
 
 const isOwner = computed(
@@ -58,6 +59,25 @@ const openCreateThread = async (matchedPostId) => {
   }
 }
 
+const handleRematch = async () => {
+  if (!detail.value) return
+  rematching.value = true
+  try {
+    await rematch(detail.value.id)
+    ElMessage.success('重新匹配完成')
+    await loadDetail()
+  } finally {
+    rematching.value = false
+  }
+}
+
+const searchByKeyword = async (keyword) => {
+  await router.push({
+    path: '/posts',
+    query: keyword ? { keyword } : {},
+  })
+}
+
 onMounted(loadDetail)
 </script>
 
@@ -83,7 +103,14 @@ onMounted(loadDetail)
       <p style="white-space: pre-wrap">{{ detail.description || '-' }}</p>
       <div style="margin-top: 12px">
         <el-space wrap>
-          <el-tag v-for="keyword in detail.keywords || []" :key="keyword">{{ keyword }}</el-tag>
+          <el-tag
+            v-for="keyword in detail.keywords || []"
+            :key="keyword"
+            style="cursor: pointer"
+            @click="searchByKeyword(keyword)"
+          >
+            {{ keyword }}
+          </el-tag>
         </el-space>
       </div>
       <div style="margin-top: 12px">
@@ -98,6 +125,7 @@ onMounted(loadDetail)
       <div style="margin-top: 16px" v-if="isOwner">
         <el-button type="primary" @click="router.push(`/posts/${detail.id}/edit`)">编辑帖子</el-button>
         <el-button @click="router.push(`/my/posts/${detail.id}/matches`)">查看匹配结果</el-button>
+        <el-button type="warning" plain :loading="rematching" @click="handleRematch">重新匹配</el-button>
       </div>
     </div>
 

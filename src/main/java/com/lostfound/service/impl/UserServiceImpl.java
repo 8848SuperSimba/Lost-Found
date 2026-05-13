@@ -251,6 +251,7 @@ public class UserServiceImpl implements UserService {
                 .email(user.getEmail())
                 .nickname(user.getNickname())
                 .avatarUrl(user.getAvatarUrl())
+                .wxOpenid(user.getWxOpenid())
                 .role(user.getRole())
                 .status(user.getStatus())
                 .lastLoginAt(user.getLastLoginAt())
