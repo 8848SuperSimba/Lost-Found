@@ -45,7 +45,3 @@ run_natapp.bat
 
 ### 忽略开发文档 ###
 开发文档/
-
-### 忽略Postman相关 ###
-.postman/
-postman/

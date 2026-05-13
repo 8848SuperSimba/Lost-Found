@@ -24,6 +24,7 @@ const menuItems = computed(() => {
     { label: '帖子管理', path: '/admin/posts', admin: true },
     { label: '匹配管理', path: '/admin/match', admin: true },
     { label: '管理统计', path: '/admin/stats', admin: true },
+    { label: '审计日志', path: '/admin/audit-logs', admin: true },
   ]
   return [...baseItems, ...adminItems].filter((item) => {
     if (item.auth && !authStore.token) return false

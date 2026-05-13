@@ -26,6 +26,7 @@ const routes = [
       { path: 'admin/posts', component: () => import('../views/admin/PostManage.vue'), meta: { requiresAuth: true, adminOnly: true } },
       { path: 'admin/match', component: () => import('../views/admin/MatchManage.vue'), meta: { requiresAuth: true, adminOnly: true } },
       { path: 'admin/stats', component: () => import('../views/admin/StatsManage.vue'), meta: { requiresAuth: true, adminOnly: true } },
+      { path: 'admin/audit-logs', component: () => import('../views/admin/AuditLog.vue'), meta: { requiresAuth: true, adminOnly: true } },
       { path: '403', component: () => import('../views/error/Forbidden.vue') },
     ],
   },
