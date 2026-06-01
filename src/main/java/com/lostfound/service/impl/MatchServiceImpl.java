@@ -365,7 +365,7 @@ public class MatchServiceImpl implements MatchService {
         if (!StringUtils.hasText(description)) {
             return null;
         }
-        return description.length() <= 50 ? description : description.substring(0, 50);
+        return description.length() <= 300 ? description : description.substring(0, 300);
     }
 
     private double scaleDouble(double value) {

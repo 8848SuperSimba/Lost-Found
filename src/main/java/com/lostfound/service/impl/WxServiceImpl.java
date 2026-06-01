@@ -7,14 +7,14 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.lostfound.dto.CreatePostRequest;
 import com.lostfound.entity.ItemPost;
 import com.lostfound.entity.ItemKeyword;
-import com.lostfound.entity.MatchResult;
 import com.lostfound.entity.User;
 import com.lostfound.enums.ItemCategory;
 import com.lostfound.enums.PostStatus;
 import com.lostfound.enums.PostType;
+import com.lostfound.enums.UserRole;
+import com.lostfound.enums.UserStatus;
 import com.lostfound.mapper.ItemKeywordMapper;
 import com.lostfound.mapper.ItemPostMapper;
-import com.lostfound.mapper.MatchResultMapper;
 import com.lostfound.mapper.UserMapper;
 import com.lostfound.service.ItemPostService;
 import com.lostfound.service.WxService;
@@ -63,6 +63,7 @@ public class WxServiceImpl implements WxService {
     private static final String FLOW_ADMIN_POST = "ADMIN_POST";
     private static final String FLOW_SEARCH = "SEARCH";
     private static final String FLOW_BIND = "BIND";
+    private static final String FLOW_REGISTER = "REGISTER";
     private static final String STEP_ADMIN_TYPE = "ADMIN_TYPE";
     private static final String STEP_ADMIN_TITLE = "ADMIN_TITLE";
     private static final String STEP_ADMIN_CATEGORY = "ADMIN_CATEGORY";
@@ -79,16 +80,24 @@ public class WxServiceImpl implements WxService {
     private static final String STEP_SEARCH_TIME = "SEARCH_TIME";
     private static final String STEP_BIND_IDENTIFIER = "BIND_IDENTIFIER";
     private static final String STEP_BIND_PASSWORD = "BIND_PASSWORD";
+    private static final String STEP_REGISTER_USERNAME = "REGISTER_USERNAME";
+    private static final String STEP_REGISTER_PHONE = "REGISTER_PHONE";
+    private static final String STEP_REGISTER_PASSWORD = "REGISTER_PASSWORD";
+    private static final String STEP_REGISTER_CONFIRM = "REGISTER_CONFIRM";
     private static final DateTimeFormatter DATETIME_FORMATTER = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm");
     private static final DateTimeFormatter DATETIME_SECONDS_FORMATTER = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
     private static final DateTimeFormatter DATE_FORMATTER = DateTimeFormatter.ofPattern("yyyy-MM-dd");
     private static final Pattern SPLIT_PATTERN = Pattern.compile("[,，\\s]+");
     private static final Pattern AREA_CODE_PATTERN = Pattern.compile("^([A-Za-z]+)(0*)(\\d+)$");
+    private static final Pattern USERNAME_PATTERN = Pattern.compile("^[A-Za-z0-9]+$");
+    private static final int MAX_POST_TITLE_LENGTH = 30;
+    private static final int MAX_POST_DESCRIPTION_LENGTH = 300;
+    private static final int MIN_USERNAME_LENGTH = 3;
+    private static final int MAX_USERNAME_LENGTH = 20;
 
     private final UserMapper userMapper;
     private final ItemPostMapper itemPostMapper;
     private final ItemKeywordMapper itemKeywordMapper;
-    private final MatchResultMapper matchResultMapper;
     private final ItemPostService itemPostService;
     private final RedisTemplate<String, Object> redisTemplate;
     private final ObjectMapper objectMapper;
@@ -107,11 +116,13 @@ public class WxServiceImpl implements WxService {
     @Value("${upload.path:uploads/}")
     private String uploadPath;
 
+    @Value("${upload.max-size:5242880}")
+    private long uploadMaxSize;
+
     public WxServiceImpl(
             UserMapper userMapper,
             ItemPostMapper itemPostMapper,
             ItemKeywordMapper itemKeywordMapper,
-            MatchResultMapper matchResultMapper,
             ItemPostService itemPostService,
             RedisTemplate<String, Object> redisTemplate,
             ObjectMapper objectMapper,
@@ -119,7 +130,6 @@ public class WxServiceImpl implements WxService {
         this.userMapper = userMapper;
         this.itemPostMapper = itemPostMapper;
         this.itemKeywordMapper = itemKeywordMapper;
-        this.matchResultMapper = matchResultMapper;
         this.itemPostService = itemPostService;
         this.redisTemplate = redisTemplate;
         this.objectMapper = objectMapper;
@@ -153,12 +163,23 @@ public class WxServiceImpl implements WxService {
         }
         if ("text".equals(msgType)) {
             String input = content == null ? "" : content.trim();
-            if ("取消".equals(input) || "取消发布".equals(input) || "取消全站找帖".equals(input) || "取消查找".equals(input) || "取消绑定".equals(input)) {
+            if ("取消".equals(input)
+                    || "取消发布".equals(input)
+                    || "取消全站找帖".equals(input)
+                    || "取消查找".equals(input)
+                    || "取消绑定".equals(input)
+                    || "取消注册".equals(input)) {
                 if (session != null) {
                     clearSession(openid);
                     return buildTextReply(openid, toUserName, "已取消当前操作。");
                 }
                 return buildTextReply(openid, toUserName, defaultGuideText());
+            }
+            if ("注册".equals(input)) {
+                if (session != null) {
+                    clearSession(openid);
+                }
+                return startRegisterFlow(openid, toUserName);
             }
             if ("绑定".equals(input)) {
                 if (session != null) {
@@ -183,9 +204,9 @@ public class WxServiceImpl implements WxService {
                 if (FLOW_BIND.equals(flow)) {
                     return handleBindText(openid, toUserName, input, session);
                 }
-            }
-            if ("我的匹配".equals(input) || "查询".equals(input) || "匹配".equals(input)) {
-                return handleQuery(openid, toUserName);
+                if (FLOW_REGISTER.equals(flow)) {
+                    return handleRegisterText(openid, toUserName, input, session);
+                }
             }
             if ("我的帖子".equals(input)) {
                 return handleMyPosts(openid, toUserName);
@@ -196,9 +217,9 @@ public class WxServiceImpl implements WxService {
 
     private String handleSubscribe(String openid, String toUserName) {
         String welcomeText = "欢迎关注BISTU失物招领处！\n\n支持以下指令：\n"
+                + "【注册】创建网站账号并自动绑定微信\n"
                 + "【绑定】关联您在网站注册的账号\n"
-                + "【我的匹配】查看您的最新匹配结果\n"
-                + "【我的帖子】查看您发布的帖子\n"
+                + "【我的帖子】查看您的帖子及匹配结果\n"
                 + "【全站找帖】按关键词/区域/时间查相似帖子\n"
                 + "【发布】管理员快速发布帖子";
         return buildTextReply(openid, toUserName, welcomeText);
@@ -291,7 +312,7 @@ public class WxServiceImpl implements WxService {
         return buildTextReply(
                 openid,
                 toUserName,
-                "绑定成功！已关联网站账号：" + accountName + "。\n现在可使用【我的匹配】【我的帖子】等功能。");
+                "绑定成功！已关联网站账号：" + accountName + "。\n现在可使用【我的帖子】等功能。");
     }
 
     private User findAccountByIdentifier(String identifier) {
@@ -302,64 +323,135 @@ public class WxServiceImpl implements WxService {
                 .last("LIMIT 1"));
     }
 
+    private String startRegisterFlow(String openid, String toUserName) {
+        User user = findUserByOpenid(openid);
+        if (user != null && !isWechatShellUser(user)) {
+            String accountName = StringUtils.hasText(user.getUsername()) ? user.getUsername() : user.getPhone();
+            return buildTextReply(openid, toUserName, "您的微信已绑定网站账号：" + accountName + "。");
+        }
+        Map<String, Object> session = new HashMap<>();
+        session.put(FLOW_KEY, FLOW_REGISTER);
+        session.put(STEP_KEY, STEP_REGISTER_USERNAME);
+        session.put(DATA_KEY, new HashMap<String, Object>());
+        saveSession(openid, session);
+        return buildTextReply(openid, toUserName, "已进入注册流程。\n第1步：请输入用户名（3-20位字母或数字）。");
+    }
+
+    private String handleRegisterText(String openid, String toUserName, String input, Map<String, Object> session) {
+        String step = String.valueOf(session.get(STEP_KEY));
+        Map<String, Object> data = getData(session);
+        switch (step) {
+            case STEP_REGISTER_USERNAME -> {
+                String username = input == null ? "" : input.trim();
+                if (!StringUtils.hasText(username)
+                        || username.length() < MIN_USERNAME_LENGTH
+                        || username.length() > MAX_USERNAME_LENGTH) {
+                    return buildTextReply(
+                            openid,
+                            toUserName,
+                            "用户名长度需为3-20位，请重新输入。");
+                }
+                if (!USERNAME_PATTERN.matcher(username).matches()) {
+                    return buildTextReply(openid, toUserName, "用户名只能包含字母和数字，请重新输入。");
+                }
+                if (findUserByUsername(username) != null) {
+                    return buildTextReply(openid, toUserName, "用户名已存在，请更换后重试。");
+                }
+                data.put("username", username);
+                session.put(STEP_KEY, STEP_REGISTER_PHONE);
+                saveSession(openid, session);
+                return buildTextReply(openid, toUserName, "第2步：请输入手机号（11位）。");
+            }
+            case STEP_REGISTER_PHONE -> {
+                String phone = input == null ? "" : input.trim();
+                if (!phone.matches("^1\\d{10}$")) {
+                    return buildTextReply(openid, toUserName, "手机号格式无效，请输入11位手机号。");
+                }
+                if (findUserByPhone(phone) != null) {
+                    return buildTextReply(openid, toUserName, "手机号已注册，请发送【绑定】关联账号。");
+                }
+                data.put("phone", phone);
+                session.put(STEP_KEY, STEP_REGISTER_PASSWORD);
+                saveSession(openid, session);
+                return buildTextReply(openid, toUserName, "第3步：请输入登录密码（至少6位）。");
+            }
+            case STEP_REGISTER_PASSWORD -> {
+                String password = input == null ? "" : input.trim();
+                if (password.length() < 6) {
+                    return buildTextReply(openid, toUserName, "密码至少6位，请重新输入。");
+                }
+                data.put("password", password);
+                session.put(STEP_KEY, STEP_REGISTER_CONFIRM);
+                saveSession(openid, session);
+                return buildTextReply(openid, toUserName, "第4步：请再次输入密码确认。");
+            }
+            case STEP_REGISTER_CONFIRM -> {
+                String password = String.valueOf(data.get("password"));
+                if (!password.equals(input == null ? "" : input.trim())) {
+                    clearSession(openid);
+                    return buildTextReply(openid, toUserName, "两次密码不一致，注册已取消。请重新发送【注册】。");
+                }
+                String username = String.valueOf(data.get("username"));
+                String phone = String.valueOf(data.get("phone"));
+                clearSession(openid);
+                return registerWechatUser(openid, toUserName, username, phone, password);
+            }
+            default -> {
+                clearSession(openid);
+                return buildTextReply(openid, toUserName, "注册流程状态异常，已重置。请重新发送【注册】。");
+            }
+        }
+    }
+
+    private String registerWechatUser(String openid, String toUserName, String username, String phone, String password) {
+        if (findUserByUsername(username) != null) {
+            return buildTextReply(openid, toUserName, "用户名已存在，请发送【注册】重新输入。");
+        }
+        if (findUserByPhone(phone) != null) {
+            return buildTextReply(openid, toUserName, "手机号已注册，请发送【绑定】关联账号。");
+        }
+        User existingBinding = findUserByOpenid(openid);
+        if (existingBinding != null && !isWechatShellUser(existingBinding)) {
+            String accountName = StringUtils.hasText(existingBinding.getUsername())
+                    ? existingBinding.getUsername()
+                    : existingBinding.getPhone();
+            return buildTextReply(openid, toUserName, "该微信号已绑定网站账号：" + accountName + "。");
+        }
+        if (existingBinding != null && isWechatShellUser(existingBinding)) {
+            userMapper.update(
+                    null,
+                    new LambdaUpdateWrapper<User>()
+                            .eq(User::getId, existingBinding.getId())
+                            .set(User::getWxOpenid, null));
+        }
+
+        User newUser = User.builder()
+                .username(username)
+                .phone(phone)
+                .nickname(username)
+                .passwordHash(passwordEncoder.encode(password))
+                .wxOpenid(openid)
+                .role(UserRole.USER)
+                .status(UserStatus.ACTIVE)
+                .build();
+        userMapper.insert(newUser);
+        return buildTextReply(openid, toUserName, "注册并绑定成功！\n现在可发送【我的帖子】查看您的帖子及匹配结果。");
+    }
+
+    private User findUserByUsername(String username) {
+        return userMapper.selectOne(new LambdaQueryWrapper<User>().eq(User::getUsername, username).last("LIMIT 1"));
+    }
+
+    private User findUserByPhone(String phone) {
+        return userMapper.selectOne(new LambdaQueryWrapper<User>().eq(User::getPhone, phone).last("LIMIT 1"));
+    }
+
     private boolean isWechatShellUser(User user) {
         return user != null && !StringUtils.hasText(user.getUsername()) && !StringUtils.hasText(user.getPhone());
     }
 
     private String shellUserHint() {
         return "您尚未绑定网站账号。请发送【绑定】，输入在网站注册的用户名/手机号与密码，即可查看您在网站上的帖子和匹配记录。";
-    }
-
-    private String handleQuery(String openid, String toUserName) {
-        User user = findUserByOpenid(openid);
-        if (user == null) {
-            return buildTextReply(openid, toUserName, shellUserHint());
-        }
-        if (isWechatShellUser(user)) {
-            return buildTextReply(openid, toUserName, shellUserHint());
-        }
-
-        List<ItemPost> openPosts = itemPostMapper.selectList(new LambdaQueryWrapper<ItemPost>()
-                .eq(ItemPost::getPublisherUserId, user.getId())
-                .eq(ItemPost::getStatus, PostStatus.OPEN));
-        if (openPosts == null || openPosts.isEmpty()) {
-            return buildTextReply(openid, toUserName, "您当前没有进行中的帖子");
-        }
-
-        List<PostMatchItem> matchItems = new ArrayList<>();
-        for (ItemPost post : openPosts) {
-            MatchResult topMatch = matchResultMapper.selectOne(new LambdaQueryWrapper<MatchResult>()
-                    .eq(MatchResult::getSrcPostId, post.getId())
-                    .orderByDesc(MatchResult::getScore)
-                    .last("LIMIT 1"));
-            if (topMatch != null && topMatch.getScore() != null) {
-                matchItems.add(new PostMatchItem(post.getTitle(), topMatch.getScore()));
-            }
-        }
-
-        if (matchItems.isEmpty()) {
-            return buildTextReply(openid, toUserName, "您当前没有进行中的帖子");
-        }
-
-        matchItems.sort(Comparator.comparing(PostMatchItem::score).reversed());
-        StringBuilder sb = new StringBuilder();
-        sb.append("您有 ").append(matchItems.size()).append(" 个帖子有匹配结果：\n");
-        int limit = Math.min(5, matchItems.size());
-        for (int i = 0; i < limit; i++) {
-            PostMatchItem item = matchItems.get(i);
-            int percent = item.score().multiply(BigDecimal.valueOf(100)).intValue();
-            sb.append(i + 1)
-                    .append(".【")
-                    .append(item.title())
-                    .append("】匹配度 ")
-                    .append(percent)
-                    .append("%\n");
-        }
-        sb.append("请登录网站查看详细信息");
-        if (matchItems.size() > 5) {
-            sb.append("\n（仅显示前5条）");
-        }
-        return buildTextReply(openid, toUserName, sb.toString());
     }
 
     private String handleMyPosts(String openid, String toUserName) {
@@ -424,9 +516,9 @@ public class WxServiceImpl implements WxService {
 
     private String defaultGuideText() {
         return "您好！支持以下指令：\n"
+                + "【注册】创建网站账号并自动绑定微信\n"
                 + "【绑定】关联您在网站注册的账号\n"
-                + "【我的匹配】查看您的最新匹配结果\n"
-                + "【我的帖子】查看您发布的帖子\n"
+                + "【我的帖子】查看您的帖子及匹配结果\n"
                 + "【全站找帖】按关键词/区域/时间查相似帖子\n"
                 + "【发布】管理员快速发布帖子\n\n"
                 + "多轮操作中可发送【取消】退出。\n"
@@ -461,11 +553,11 @@ public class WxServiceImpl implements WxService {
                 data.put("postType", postType.name());
                 session.put(STEP_KEY, STEP_ADMIN_TITLE);
                 saveSession(openid, session);
-                return buildTextReply(openid, toUserName, "第2步：请输入帖子标题（不超过128字）。");
+                return buildTextReply(openid, toUserName, "第2步：请输入帖子标题（不超过30字）。");
             }
             case STEP_ADMIN_TITLE -> {
-                if (!StringUtils.hasText(input) || input.length() > 128) {
-                    return buildTextReply(openid, toUserName, "标题不能为空且长度不能超过128字，请重新输入。");
+                if (!StringUtils.hasText(input) || input.length() > MAX_POST_TITLE_LENGTH) {
+                    return buildTextReply(openid, toUserName, "标题不能为空且长度不能超过30字，请重新输入。");
                 }
                 data.put("title", input);
                 session.put(STEP_KEY, STEP_ADMIN_CATEGORY);
@@ -511,11 +603,14 @@ public class WxServiceImpl implements WxService {
                 data.put("lostFoundTime", lostFoundTime.toString());
                 session.put(STEP_KEY, STEP_ADMIN_DESC);
                 saveSession(openid, session);
-                return buildTextReply(openid, toUserName, "第7步：请输入详细说明（建议包含物品特征）。");
+                return buildTextReply(openid, toUserName, "第7步：请输入详细说明（不超过300字，建议包含物品特征）。");
             }
             case STEP_ADMIN_DESC -> {
                 if (!StringUtils.hasText(input)) {
                     return buildTextReply(openid, toUserName, "说明不能为空，请重新输入。");
+                }
+                if (input.length() > MAX_POST_DESCRIPTION_LENGTH) {
+                    return buildTextReply(openid, toUserName, "说明长度不能超过300字，请重新输入。");
                 }
                 data.put("description", input);
                 session.put(STEP_KEY, STEP_ADMIN_LOCATION);
@@ -579,13 +674,7 @@ public class WxServiceImpl implements WxService {
             saveSession(openid, session);
             return buildTextReply(openid, toUserName, "已接收第" + imageUrls.size() + "张图片。继续发图，或发送【完成】发布。");
         } catch (Exception ex) {
-            if (StringUtils.hasText(picUrl)) {
-                imageUrls.add(picUrl);
-                data.put("imageUrls", imageUrls);
-                saveSession(openid, session);
-                return buildTextReply(openid, toUserName, "图片已暂存（临时链接）。当前共" + imageUrls.size() + "张，发送【完成】发布。");
-            }
-            return buildTextReply(openid, toUserName, "图片处理失败，请重发图片或发送【完成】继续。");
+            return buildTextReply(openid, toUserName, "图片处理失败，未保存本次图片。请确认图片不超过5MB后重发，或发送【完成】继续。");
         }
     }
 
@@ -818,6 +907,10 @@ public class WxServiceImpl implements WxService {
         if (!contentType.startsWith("image/")) {
             throw new IOException("下载媒体失败，返回非图片类型");
         }
+        byte[] imageBytes = response.body();
+        if (imageBytes.length > uploadMaxSize) {
+            throw new IOException("图片超过5MB大小限制");
+        }
         String extension = contentType.contains("png") ? "png" : contentType.contains("webp") ? "webp" : "jpg";
         String monthDir = LocalDate.now().format(DateTimeFormatter.ofPattern("yyyy-MM"));
         String generatedName = UUID.randomUUID().toString().replace("-", "") + "." + extension;
@@ -827,7 +920,7 @@ public class WxServiceImpl implements WxService {
             Files.createDirectories(targetDir);
         }
         Path targetFile = targetDir.resolve(generatedName);
-        Files.write(targetFile, response.body());
+        Files.write(targetFile, imageBytes);
         return "/" + rootPath + "/" + monthDir + "/" + generatedName;
     }
 
@@ -984,8 +1077,6 @@ public class WxServiceImpl implements WxService {
                         + "</xml>",
                 safeToUser, safeFromUser, createTime, safeContent);
     }
-
-    private record PostMatchItem(String title, BigDecimal score) {}
 
     private record Score(BigDecimal total) {}
 

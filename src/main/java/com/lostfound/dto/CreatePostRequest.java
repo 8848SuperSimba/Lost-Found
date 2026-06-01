@@ -17,12 +17,13 @@ public class CreatePostRequest {
     private PostType postType;
 
     @NotBlank(message = "标题不能为空")
-    @Size(max = 128, message = "标题长度不能超过128")
+    @Size(max = 30, message = "标题长度不能超过30")
     private String title;
 
     @NotNull(message = "分类不能为空")
     private ItemCategory category;
 
+    @Size(max = 300, message = "描述长度不能超过300")
     private String description;
 
     @NotNull(message = "遗失/拾获时间不能为空")

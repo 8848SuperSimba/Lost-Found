@@ -1,5 +1,6 @@
 <script setup>
 import { ref } from 'vue'
+import { ElMessage } from 'element-plus'
 import { CATEGORY_OPTIONS } from '../utils/dict'
 
 const props = defineProps({
@@ -9,6 +10,7 @@ const props = defineProps({
 
 const emit = defineEmits(['update:modelValue'])
 const keywordInput = ref('')
+const MAX_IMAGE_SIZE = 5 * 1024 * 1024
 
 const update = (key, value) => {
   emit('update:modelValue', { ...props.modelValue, [key]: value })
@@ -32,7 +34,15 @@ const removeKeyword = (value) => {
 }
 
 const onImageChange = (files) => {
-  update('localImages', files)
+  const validFiles = files.filter((file) => {
+    const size = file.raw?.size || file.size || 0
+    if (size > MAX_IMAGE_SIZE) {
+      ElMessage.warning(`图片「${file.name}」超过5MB，请压缩后重新上传`)
+      return false
+    }
+    return true
+  })
+  update('localImages', validFiles)
 }
 </script>
 
@@ -57,7 +67,7 @@ const onImageChange = (files) => {
     </el-row>
 
     <el-form-item label="标题">
-      <el-input :model-value="modelValue.title" @update:model-value="(v) => update('title', v)" maxlength="128" show-word-limit />
+      <el-input :model-value="modelValue.title" @update:model-value="(v) => update('title', v)" maxlength="30" show-word-limit />
     </el-form-item>
 
     <el-form-item label="关键词（最多10个）">
@@ -77,6 +87,8 @@ const onImageChange = (files) => {
       <el-input
         type="textarea"
         :rows="5"
+        maxlength="300"
+        show-word-limit
         :model-value="modelValue.description"
         @update:model-value="(v) => update('description', v)"
       />
@@ -116,10 +128,11 @@ const onImageChange = (files) => {
       <el-input :model-value="modelValue.reward" @update:model-value="(v) => update('reward', v)" />
     </el-form-item>
 
-    <el-form-item label="图片（最多5张）">
+    <el-form-item label="图片（最多5张，每张不超过5MB）">
       <el-upload
         list-type="picture-card"
         :auto-upload="false"
+        :file-list="modelValue.localImages || []"
         :limit="5"
         :on-change="(_file, files) => onImageChange(files)"
         :on-remove="(_file, files) => onImageChange(files)"

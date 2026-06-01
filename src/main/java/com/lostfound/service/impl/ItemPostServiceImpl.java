@@ -340,7 +340,7 @@ public class ItemPostServiceImpl implements ItemPostService {
         if (!StringUtils.hasText(description)) {
             return null;
         }
-        return description.length() <= 50 ? description : description.substring(0, 50);
+        return description.length() <= 300 ? description : description.substring(0, 300);
     }
 
     private String showContactInfo(ItemPost itemPost, Long currentUserId) {

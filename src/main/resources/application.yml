@@ -20,8 +20,8 @@ spring:
       database: 0
   servlet:
     multipart:
-      max-file-size: 2MB
-      max-request-size: 10MB
+      max-file-size: 5MB
+      max-request-size: 30MB
   mvc:
     format:
       date-time: iso
@@ -47,7 +47,7 @@ wx:
 
 upload:
   path: uploads/
-  max-size: 2097152
+  max-size: 5242880
 
 match:
   min-score: 0.30

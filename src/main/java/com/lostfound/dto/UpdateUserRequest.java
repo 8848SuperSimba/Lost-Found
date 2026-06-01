@@ -7,7 +7,7 @@ import lombok.Data;
 @Data
 public class UpdateUserRequest {
 
-    @Size(max = 64, message = "昵称长度不能超过64")
+    @Size(max = 30, message = "昵称长度不能超过30")
     private String nickname;
 
     @Email(message = "邮箱格式错误")

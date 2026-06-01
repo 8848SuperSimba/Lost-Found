@@ -19,7 +19,7 @@ CREATE TABLE `user` (
   `email`         VARCHAR(128)    NULL,
   `wx_openid`     VARCHAR(64)     NULL COMMENT '微信公众号 openid',
   `password_hash` VARCHAR(255)    NULL COMMENT '微信用户可无密码',
-  `nickname`      VARCHAR(64)     NULL,
+  `nickname`      VARCHAR(30)     NULL,
   `avatar_url`    VARCHAR(512)    NULL,
   `role`          ENUM('USER','ADMIN','SUPER_ADMIN') NOT NULL DEFAULT 'USER',
   `status`        ENUM('ACTIVE','BANNED') NOT NULL DEFAULT 'ACTIVE',
@@ -45,7 +45,7 @@ DROP TABLE IF EXISTS `item_post`;
 CREATE TABLE `item_post` (
   `id`                BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
   `post_type`         ENUM('LOST','FOUND') NOT NULL,
-  `title`             VARCHAR(128)    NOT NULL,
+  `title`             VARCHAR(30)     NOT NULL,
   `category`          VARCHAR(32)     NOT NULL COMMENT '物品分类：证件/数码/钥匙/衣物/其他',
   `description`       TEXT            NULL,
   `lost_found_time`   DATETIME        NULL COMMENT '遗失或拾获时间',

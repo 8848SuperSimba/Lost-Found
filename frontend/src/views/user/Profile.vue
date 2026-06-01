@@ -77,8 +77,8 @@ onMounted(loadMe)
           </el-descriptions>
           <el-divider />
           <el-form ref="profileRef" :model="profileForm" label-position="top">
-            <el-form-item label="昵称">
-              <el-input v-model="profileForm.nickname" />
+            <el-form-item label="昵称" prop="nickname" :rules="[{ max: 30, message: '昵称不能超过30字', trigger: 'blur' }]">
+              <el-input v-model="profileForm.nickname" maxlength="30" show-word-limit />
             </el-form-item>
             <el-form-item label="邮箱">
               <el-input v-model="profileForm.email" />
