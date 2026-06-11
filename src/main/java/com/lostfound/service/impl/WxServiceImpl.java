@@ -48,12 +48,14 @@ import java.util.concurrent.TimeUnit;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
 
+@Slf4j
 @Service
 public class WxServiceImpl implements WxService {
 
@@ -94,6 +96,7 @@ public class WxServiceImpl implements WxService {
     private static final int MAX_POST_DESCRIPTION_LENGTH = 300;
     private static final int MIN_USERNAME_LENGTH = 3;
     private static final int MAX_USERNAME_LENGTH = 20;
+    private static final String WX_ACCESS_TOKEN_KEY = "wx:access_token";
 
     private final UserMapper userMapper;
     private final ItemPostMapper itemPostMapper;
@@ -102,7 +105,10 @@ public class WxServiceImpl implements WxService {
     private final RedisTemplate<String, Object> redisTemplate;
     private final ObjectMapper objectMapper;
     private final PasswordEncoder passwordEncoder;
-    private final HttpClient httpClient = HttpClient.newHttpClient();
+    private final HttpClient httpClient = HttpClient.newBuilder()
+            .followRedirects(HttpClient.Redirect.NORMAL)
+            .connectTimeout(Duration.ofSeconds(15))
+            .build();
 
     @Value("${wx.token}")
     private String wxToken;
@@ -668,12 +674,14 @@ public class WxServiceImpl implements WxService {
         String mediaId = bodyMap.get("MediaId");
         String picUrl = bodyMap.get("PicUrl");
         try {
-            String imageUrl = downloadWechatImage(mediaId);
+            String imageUrl = downloadWechatImage(mediaId, picUrl);
             imageUrls.add(imageUrl);
             data.put("imageUrls", imageUrls);
             saveSession(openid, session);
             return buildTextReply(openid, toUserName, "已接收第" + imageUrls.size() + "张图片。继续发图，或发送【完成】发布。");
         } catch (Exception ex) {
+            log.warn("公众号发布图片处理失败, openid={}, mediaId={}, picUrl={}, reason={}",
+                    openid, mediaId, picUrl, ex.getMessage());
             return buildTextReply(openid, toUserName, "图片处理失败，未保存本次图片。请确认图片不超过5MB后重发，或发送【完成】继续。");
         }
     }
@@ -892,39 +900,160 @@ public class WxServiceImpl implements WxService {
         return sb.toString();
     }
 
-    private String downloadWechatImage(String mediaId) throws Exception {
-        if (!StringUtils.hasText(mediaId)) {
-            throw new IllegalArgumentException("mediaId 为空");
+    private String downloadWechatImage(String mediaId, String picUrl) throws Exception {
+        Exception lastError = null;
+        if (StringUtils.hasText(mediaId)) {
+            try {
+                return downloadFromWechatMediaApi(mediaId);
+            } catch (Exception ex) {
+                lastError = ex;
+                log.warn("微信 media/get 下载失败, mediaId={}, reason={}", mediaId, ex.getMessage());
+            }
         }
-        String token = getWxAccessToken();
-        String url = "https://api.weixin.qq.com/cgi-bin/media/get?access_token="
-                + URLEncoder.encode(token, StandardCharsets.UTF_8)
-                + "&media_id="
-                + URLEncoder.encode(mediaId, StandardCharsets.UTF_8);
-        HttpRequest request = HttpRequest.newBuilder().uri(URI.create(url)).GET().build();
+        if (StringUtils.hasText(picUrl)) {
+            try {
+                return downloadFromRemoteUrl(picUrl);
+            } catch (Exception ex) {
+                lastError = ex;
+                log.warn("微信 PicUrl 下载失败, picUrl={}, reason={}", picUrl, ex.getMessage());
+            }
+        }
+        if (lastError != null) {
+            throw lastError;
+        }
+        throw new IllegalArgumentException("mediaId 与 PicUrl 均为空");
+    }
+
+    private String downloadFromWechatMediaApi(String mediaId) throws Exception {
+        for (int attempt = 0; attempt < 2; attempt++) {
+            try {
+                String token = getWxAccessToken();
+                String url = "https://api.weixin.qq.com/cgi-bin/media/get?access_token="
+                        + URLEncoder.encode(token, StandardCharsets.UTF_8)
+                        + "&media_id="
+                        + URLEncoder.encode(mediaId, StandardCharsets.UTF_8);
+                HttpRequest request = HttpRequest.newBuilder().uri(URI.create(url)).GET().build();
+                HttpResponse<byte[]> response = httpClient.send(request, HttpResponse.BodyHandlers.ofByteArray());
+                byte[] body = response.body();
+                String contentType = response.headers().firstValue("Content-Type").orElse("");
+                assertWechatImageResponse(body, contentType);
+                return saveImageBytes(body, contentType);
+            } catch (IOException ex) {
+                if (attempt == 0 && isAccessTokenError(ex.getMessage())) {
+                    redisTemplate.delete(WX_ACCESS_TOKEN_KEY);
+                    continue;
+                }
+                throw ex;
+            }
+        }
+        throw new IOException("下载微信媒体失败");
+    }
+
+    private boolean isAccessTokenError(String message) {
+        if (!StringUtils.hasText(message)) {
+            return false;
+        }
+        return message.contains("40001") || message.contains("42001") || message.contains("40014");
+    }
+
+    private String downloadFromRemoteUrl(String imageUrl) throws Exception {
+        HttpRequest request = HttpRequest.newBuilder()
+                .uri(URI.create(imageUrl))
+                .header("User-Agent", "Mozilla/5.0")
+                .GET()
+                .build();
         HttpResponse<byte[]> response = httpClient.send(request, HttpResponse.BodyHandlers.ofByteArray());
-        String contentType = response.headers().firstValue("Content-Type").orElse("image/jpeg");
-        if (!contentType.startsWith("image/")) {
-            throw new IOException("下载媒体失败，返回非图片类型");
+        if (response.statusCode() >= 400) {
+            throw new IOException("下载图片 HTTP " + response.statusCode());
         }
-        byte[] imageBytes = response.body();
+        byte[] body = response.body();
+        String contentType = response.headers().firstValue("Content-Type").orElse("");
+        assertWechatImageResponse(body, contentType);
+        return saveImageBytes(body, contentType);
+    }
+
+    private void assertWechatImageResponse(byte[] body, String contentType) throws IOException {
+        if (body == null || body.length == 0) {
+            throw new IOException("图片内容为空");
+        }
+        if (body[0] == '{') {
+            try {
+                JsonNode root = objectMapper.readTree(body);
+                if (root.has("errcode") && root.get("errcode").asInt() != 0) {
+                    throw new IOException("微信接口错误: "
+                            + root.path("errmsg").asText()
+                            + " (errcode="
+                            + root.path("errcode").asInt()
+                            + ")");
+                }
+            } catch (IOException ex) {
+                throw ex;
+            } catch (Exception ex) {
+                throw new IOException("解析微信错误响应失败", ex);
+            }
+        }
+        if (StringUtils.hasText(contentType)
+                && !contentType.startsWith("image/")
+                && !contentType.contains("octet-stream")) {
+            throw new IOException("下载媒体失败，返回非图片类型: " + contentType);
+        }
+    }
+
+    private String saveImageBytes(byte[] imageBytes, String contentType) throws IOException {
         if (imageBytes.length > uploadMaxSize) {
             throw new IOException("图片超过5MB大小限制");
         }
-        String extension = contentType.contains("png") ? "png" : contentType.contains("webp") ? "webp" : "jpg";
+        String extension = resolveImageExtension(contentType, imageBytes);
         String monthDir = LocalDate.now().format(DateTimeFormatter.ofPattern("yyyy-MM"));
         String generatedName = UUID.randomUUID().toString().replace("-", "") + "." + extension;
         String rootPath = StringUtils.trimTrailingCharacter(uploadPath, '/');
-        Path targetDir = Paths.get(rootPath, monthDir);
-        if (!Files.exists(targetDir)) {
-            Files.createDirectories(targetDir);
-        }
+        Path rootDir = Paths.get(uploadPath).toAbsolutePath().normalize();
+        Path targetDir = rootDir.resolve(monthDir);
+        Files.createDirectories(targetDir);
         Path targetFile = targetDir.resolve(generatedName);
         Files.write(targetFile, imageBytes);
         return "/" + rootPath + "/" + monthDir + "/" + generatedName;
     }
 
+    private String resolveImageExtension(String contentType, byte[] imageBytes) {
+        if (StringUtils.hasText(contentType)) {
+            String lower = contentType.toLowerCase();
+            if (lower.contains("png")) {
+                return "png";
+            }
+            if (lower.contains("webp")) {
+                return "webp";
+            }
+            if (lower.contains("jpeg") || lower.contains("jpg")) {
+                return "jpg";
+            }
+        }
+        if (imageBytes.length >= 4
+                && imageBytes[0] == (byte) 0x89
+                && imageBytes[1] == 0x50
+                && imageBytes[2] == 0x4E
+                && imageBytes[3] == 0x47) {
+            return "png";
+        }
+        if (imageBytes.length >= 12
+                && imageBytes[0] == 'R'
+                && imageBytes[1] == 'I'
+                && imageBytes[2] == 'F'
+                && imageBytes[3] == 'F'
+                && imageBytes[8] == 'W'
+                && imageBytes[9] == 'E'
+                && imageBytes[10] == 'B'
+                && imageBytes[11] == 'P') {
+            return "webp";
+        }
+        return "jpg";
+    }
+
     private String getWxAccessToken() throws Exception {
+        Object cached = redisTemplate.opsForValue().get(WX_ACCESS_TOKEN_KEY);
+        if (cached instanceof String cachedToken && StringUtils.hasText(cachedToken)) {
+            return cachedToken;
+        }
         String url = "https://api.weixin.qq.com/cgi-bin/token?grant_type=client_credential&appid="
                 + URLEncoder.encode(wxAppid, StandardCharsets.UTF_8)
                 + "&secret="
@@ -932,10 +1061,21 @@ public class WxServiceImpl implements WxService {
         HttpRequest request = HttpRequest.newBuilder().uri(URI.create(url)).GET().build();
         HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
         JsonNode root = objectMapper.readTree(response.body());
+        JsonNode errcode = root.get("errcode");
+        if (errcode != null && errcode.asInt() != 0) {
+            throw new IOException("获取 access_token 失败: "
+                    + root.path("errmsg").asText()
+                    + " (errcode="
+                    + errcode.asInt()
+                    + ")");
+        }
         JsonNode token = root.get("access_token");
         if (token == null || !StringUtils.hasText(token.asText())) {
             throw new IOException("获取 access_token 失败");
         }
+        int expiresIn = root.path("expires_in").asInt(7200);
+        long ttlSeconds = Math.max(60, expiresIn - 300L);
+        redisTemplate.opsForValue().set(WX_ACCESS_TOKEN_KEY, token.asText(), ttlSeconds, TimeUnit.SECONDS);
         return token.asText();
     }
 
